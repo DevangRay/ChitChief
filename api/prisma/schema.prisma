@@ -4,10 +4,106 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  username String @unique
+  password_hash String 
+  created_at DateTime @default(now())
+
+  refresh_token RefreshToken[]
+  orders Order[]
+}
+
+model RefreshToken {
+  id String @id @default(uuid())
+  token String @unique
+  user_id String
+  user User @relation(fields: [user_id], references: [id])
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([user_id])
+  @@index([expires_at])
+}
+
+model Event {
+  id String @id @default(uuid())
+  name String
+  description String?
+  venue String
+  date DateTime
+  created_at DateTime @default(now())
+  seat Seat[]
+
+  @@index([date])
+  @@index([venue])
+}
+
+model Seat {
+  id String @id @default(uuid())
+  event_id String
+  event Event @relation(fields: [event_id], references: [id])
+  row String
+  number Int
+  /// Stored in cents
+  price Int
+  seat_status SeatStatus @default(AVAILABLE)
+  order_seats OrderSeats?
+
+  @@unique([event_id, row, number])
+  @@index([event_id, seat_status])
+}
+
+model Order {
+  id String @id @default(uuid())
+  user_id String
+  user User @relation(fields: [user_id], references: [id])
+  order_status OrderStatus @default(PENDING)
+  stripe_payment_id String? @unique
+  stripe_payment_info StripePaymentInfo? @relation(fields: [stripe_payment_id], references: [id])
+  idempotency_key String @unique
+  created_at DateTime @default(now())
+  orderseats OrderSeats[]
+
+  @@index([user_id, order_status])
+}
+
+model OrderSeats {
+  id String @id @default(uuid())
+  order_id String
+  order Order @relation(fields: [order_id], references: [id])
+  seat_id String @unique
+  seat Seat @relation(fields: [seat_id], references: [id])
+  /// Saving seat price at moment seat is bought
+  price_at_purchase Int
+  created_at DateTime @default(now())
+
+  @@index([order_id])
+}
+
+model StripePaymentInfo {
+  id String @id @default(uuid())
+  payment_id String
+  order Order?
+}
+
+enum SeatStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  EXPIRED
 }
