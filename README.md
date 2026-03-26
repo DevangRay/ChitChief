@@ -4,7 +4,8 @@
 * Restarting/Shutting-down Docker instance
     * `docker compose down -v`
 ---
-DB Schema https://dbdocs.io/devangray624/ChitChief-DB-Schema
+DB Schema 
+* https://dbdocs.io/devangray624/ChitChief-DB-Schema
 ---
 Goals
 * Distributed seat locking with Redis + TTL
