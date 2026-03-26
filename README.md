@@ -3,6 +3,10 @@
     * `docker compose up -d`
 * Restarting/Shutting-down Docker instance
     * `docker compose down -v`
+* Run Prisma migration
+    * `npx prisma migrate dev --name init`
+* Run Prisma seed code
+    * `npx prisma db seed`
 ---
 DB Schema 
 * https://dbdocs.io/devangray624/ChitChief-DB-Schema

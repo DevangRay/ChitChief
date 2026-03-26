@@ -41,7 +41,7 @@ model Event {
   venue String
   date DateTime
   created_at DateTime @default(now())
-  seat Seat[]
+  seats Seat[]
 
   @@index([date])
   @@index([venue])
