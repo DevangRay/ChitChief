@@ -14,6 +14,8 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
     await prisma.$connect();
 
+    // 5 is a magic number right now, can be moved into its own variable for increased control
+    // the length SHOULD NOT increase 25 (will go into punctuation)
     const row_array = Array.from({ length: 5 }, (_, i) => {
         return String.fromCharCode(65 + i);
     })
