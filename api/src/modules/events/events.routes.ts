@@ -1,7 +1,8 @@
 import { FastifyInstance } from "fastify";
+import { getEventsSchema, getEventByIdSchema, getSeatsOfEventByIdSchema } from "./events.schema";
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
-    fastify.get('/', async (request, reply) => {
+    fastify.get('/', { schema: getEventsSchema }, async (request, reply) => {
         try {
             const events = await fastify.prisma.event.findMany();
             return events;
@@ -10,7 +11,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             return reply.status(500).send({ message: 'Internal server error' });
         }
     }),
-        fastify.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
+        fastify.get<{ Params: { id: string } }>('/:id', { schema: getEventByIdSchema }, async (request, reply) => {
             const { id } = request.params;
             try {
                 const event = await fastify.prisma.event.findUnique({
@@ -29,10 +30,28 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
                         }
                     }
                 });
-                
+
                 return event;
             } catch (error) {
                 fastify.log.error({ error }, '[GET /events/:id] Failed to query events for id:', id);
+                return reply.status(500).send({ message: 'Internal server error' });
+            }
+        }),
+        fastify.get<{ Params: { id: string } }>('/:id/seats', { schema: getSeatsOfEventByIdSchema }, async (request, reply) => {
+            const { id } = request.params;
+            try {
+                const event_seats = await fastify.prisma.seat.findMany({
+                    where: {
+                        event_id: id
+                    },
+                    orderBy: {
+                        price: "asc"
+                    }
+                })
+
+                return event_seats;
+            } catch (error) {
+                fastify.log.error({ error }, '[GET /events/:id/seats] Failed to query events for id:', id);
                 return reply.status(500).send({ message: 'Internal server error' });
             }
         })
