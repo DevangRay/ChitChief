@@ -1,8 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from '@prisma/adapter-pg';
-
 import { FastifyInstance } from "fastify";
 import fp from 'fastify-plugin';
+import { createPrismaClient } from "../lib/prisma-factory";
 
 // Source - https://stackoverflow.com/a/54167614
 // Posted by DavidP, modified by community. See post 'Timeline' for change history
@@ -18,8 +17,8 @@ declare module 'fastify' {
 }
 
 async function prisma(fastify: FastifyInstance) {
-    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-    const prisma = new PrismaClient({ adapter });
+    console.log(process.env.DATABASE_URL)
+    const prisma = createPrismaClient(process.env.DATABASE_URL!);
     await prisma.$connect();
 
     fastify.decorate('prisma', prisma);

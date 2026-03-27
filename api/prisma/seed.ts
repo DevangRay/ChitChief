@@ -1,19 +1,7 @@
-// Source - https://stackoverflow.com/a/54167614
-// Posted by DavidP, modified by community. See post 'Timeline' for change history
-// Retrieved 2026-03-25, License - CC BY-SA 4.0
-// EXPLANATION: Allows file to retrieve .env file from parent directory
-const path = require('path')
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') })
-
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from '@prisma/adapter-pg';
-
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+import {createPrismaClient} from "../src/lib/prisma-factory";
 
 async function main() {
-    await prisma.$connect();
-
+    const prisma = createPrismaClient(process.env.DATABASE_URL!);
     // 5 is a magic number right now, can be moved into its own variable for increased control
     // the length SHOULD NOT increase 25 (will go into punctuation)
     const row_array = Array.from({ length: 5 }, (_, i) => {
@@ -45,4 +33,3 @@ async function main() {
 
 main()
     .catch(console.error)
-    .finally(() => prisma.$disconnect());

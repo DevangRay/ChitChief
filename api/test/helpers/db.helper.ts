@@ -1,6 +1,6 @@
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { createPrismaClient } from "../../src/lib/prisma-factory";
 import { execSync } from 'child_process';
 
 let container: StartedPostgreSqlContainer
@@ -21,8 +21,7 @@ export async function startDb() {
         env: { ...process.env, DATABASE_URL: url }
     })
 
-    const adapter = new PrismaPg({ connectionString: url });
-    prisma = new PrismaClient({ adapter });
+    prisma = createPrismaClient(url)
     await prisma.$connect();
 }
 
