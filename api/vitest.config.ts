@@ -1,4 +1,4 @@
-import {defineConfig} from "vitest/config";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
     test: {
@@ -11,6 +11,7 @@ export default defineConfig({
         },
         // separating integration tests
         include: ['src/**/*.test.ts'],
-        testTimeout: 30000
+        testTimeout: 60000,   // 60s for individual tests
+        hookTimeout: 60000,   // 60s for beforeAll/afterAll hooks ← this is what you're missing
     }
 })

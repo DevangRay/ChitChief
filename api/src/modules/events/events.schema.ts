@@ -9,11 +9,6 @@ export const getEventsSchema: FastifySchema = {
             type: "array",
             items: eventSchema
         },
-        204: {
-            description: "No available events.",
-            type: "array",
-            items: eventSchema
-        },
         500: {
             description: "Internal server error.",
             type: "object",

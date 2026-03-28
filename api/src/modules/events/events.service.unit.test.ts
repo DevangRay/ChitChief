@@ -97,7 +97,7 @@ describe('EventService', () => {
 
             const result = await service.getEventById(validId);
 
-            expect(result).toEqual({});
+            expect(result).toEqual(null);
         })
 
         it('Exception Test: rethrows error on DB failure', async () => {

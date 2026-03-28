@@ -35,7 +35,7 @@ export default class EventsService {
         });
 
         if (!unique_event) {
-            return {};
+            return null;
         }
 
         const return_object = {

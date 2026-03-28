@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
+    "test:events:unit": "vitest run ./src/modules/events/events.service.unit.test.ts",
+    "test:events:integration": "vitest run ./src/modules/events/events.routes.e2e.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:unit": "vitest run --testPathPattern=unit",
@@ -17,19 +19,20 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@prisma/client": "^7.5.0",
     "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/client": "^7.5.0",
     "dotenv": "^17.3.1",
     "fastify": "^5.8.4",
-    "fastify-plugin": "^5.1.0"
+    "fastify-plugin": "^5.1.0",
+    "ioredis": "^5.10.1",
+    "supertest": "^7.2.2"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^11.13.0",
     "@types/node": "^25.5.0",
+    "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.1",
-    "ioredis": "^5.10.1",
     "prisma": "^7.5.0",
-    "supertest": "^7.2.2",
     "testcontainers": "^11.13.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
