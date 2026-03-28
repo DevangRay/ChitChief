@@ -8,4 +8,4 @@ RUN npx prisma generate
 RUN npm run build
 
 # Will be overriden for BullMQ
-CMD ["node", "dist/server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
