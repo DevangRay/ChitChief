@@ -5,7 +5,12 @@ import { eventSchema, seatSchema } from "../../lib/schema-constants";
 export const getEventsSchema: FastifySchema = {
     response: {
         200: {
-            description: "Description of matching event.",
+            description: "Description of available events, from this date.",
+            type: "array",
+            items: eventSchema
+        },
+        204: {
+            description: "No available events.",
             type: "array",
             items: eventSchema
         },
@@ -90,7 +95,7 @@ export const getSeatsOfEventByIdSchema: FastifySchema = {
             items: seatSchema
         },
         404: {
-            description: "Event not found.",
+            description: "Seats not found.",
             type: "object",
             properties: {
                 message: { type: "string" }
