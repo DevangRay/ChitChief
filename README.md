@@ -1,10 +1,13 @@
 # ChitChief
 * Running Docker instance
-    * `docker compose up -d`
+    * `docker compose up --build -d`
 * Restarting/Shutting-down Docker instance
-    * `docker compose down -v`
+    * `docker compose down`
+        * run with flag `-v` to clear the slate
 * Run Prisma migration
     * `npx prisma migrate dev --name init`
+* Re-generating prisma
+    * `npx prisma generate`
 * Run Prisma seed code
     * `npx prisma db seed`
 ---
@@ -69,19 +72,22 @@ Tech Stack breakdown
     * k6 for load testing
 ---
 Order of operations
-1) Postgres schema + Prisma models
-    * Will need seed script
-        * start with 1 event/10 seats
+1) ~~Postgres schema + Prisma models~~
+    * ~~Will need seed script~~
+        * ~~start with 1 event/25 seats~~
 2) Basic API structure
-    * GET /events
-    * GET /events/:id
-        * return event with seat availabilty summar
-    * GET /events/:id/seats
+    * ~~GET /events~~
+    * ~~GET /events/:id~~
+        * return event with seat availabilty summary
+    * ~~GET /events/:id/seats~~
     * POST /tickets/reserve
         * connected to Redis to lock, get lock token from Redis
         * Lock all seats or None
     * BullMQ job that expired reservation and returns seats after timeout
     * TDD!!!!
+        * ~~Unit tests for Events~~
+        * ~~E2E HTTP testing for Events~~
+        * Integration testing
 3) Seat reservation with Redis locking
 4) BullMQ for reservation expiry
 5) Stripe for purchase endpoint (idempotency) and Resend
