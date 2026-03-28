@@ -1,6 +1,6 @@
 import { PrismaClient, SeatStatus } from "@prisma/client";
 
-export class EventsService {
+export default class EventsService {
     constructor(private readonly prisma: PrismaClient) { }
 
     async getEvents() {
