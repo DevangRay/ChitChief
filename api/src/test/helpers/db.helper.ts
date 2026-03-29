@@ -7,7 +7,7 @@ let container: StartedPostgreSqlContainer
 let prisma: PrismaClient
 
 export async function startDb() {
-    container = await new PostgreSqlContainer('postgres:16-alpine')
+    container = await new PostgreSqlContainer('postgres:18-alpine')
         .withDatabase('ticketing_test')
         .withUsername('postgres')
         .withPassword('postgres')

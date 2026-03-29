@@ -5,7 +5,7 @@ let container: StartedTestContainer;
 let redis: Redis;
 
 export async function startRedis() {
-    container = await new GenericContainer('redis:7-alpha')
+    container = await new GenericContainer('redis:7-alpine')
         .withExposedPorts(6379)
         .start();
 

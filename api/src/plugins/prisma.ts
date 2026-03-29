@@ -17,7 +17,6 @@ declare module 'fastify' {
 }
 
 async function prisma(fastify: FastifyInstance) {
-    console.log(process.env.DATABASE_URL)
     const prisma = createPrismaClient(process.env.DATABASE_URL!);
     await prisma.$connect();
 
