@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ReservationService } from './tickets.service';
+import { TicketService } from './tickets.service';
 
 const mockRedis = {
     set: vi.fn(),
@@ -15,12 +15,12 @@ const mockPrisma = {
     }
 }
 
-describe('ReservationService', () => {
-    let service: ReservationService;
+describe('TicketService', () => {
+    let service: TicketService;
 
     beforeEach(() => {
         vi.clearAllMocks()
-        service = new ReservationService(mockRedis as any, mockPrisma as any)
+        service = new TicketService(mockRedis as any, mockPrisma as any)
     })
 
     describe('reserveSeats', () => {

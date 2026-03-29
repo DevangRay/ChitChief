@@ -1,4 +1,4 @@
-import {createPrismaClient} from "../src/lib/prisma-factory";
+import { createPrismaClient } from "../src/lib/prisma-factory";
 
 async function main() {
     const prisma = createPrismaClient(process.env.DATABASE_URL!);
@@ -27,8 +27,17 @@ async function main() {
         include: { seats: true }
     })
 
+    const user = await prisma.user.create({
+        data: {
+            email: "devangray624@gmail.com",
+            username: "dray624",
+            password_hash: "fake_hashed_password",
+        }
+    });
+
     console.log(`Created event: ${event.name}`)
     console.log(`Created ${event.seats.length} seats`)
+    console.log(`Created user: ${user.username} | ${user.id}`)
 }
 
 main()
