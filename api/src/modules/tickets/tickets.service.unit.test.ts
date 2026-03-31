@@ -131,7 +131,11 @@ describe('TicketService.reserveSeats', () => {
 
         describe('equivalence cases', () => {
             it('proceeds without throwing for a valid seats array and user', async () => {
-                await expect(service.reserveSeats(seats, USER)).resolves.not.toThrow();
+                const result = await service.reserveSeats(seats, USER);
+                expect(result.success).toBe(true);
+
+                expect(prisma.seat.findMany).toHaveBeenCalled();
+                expect(redis.watch).toHaveBeenCalled();
             });
         });
 
@@ -140,7 +144,11 @@ describe('TicketService.reserveSeats', () => {
                 const { service, prisma } = makeService(allOk(1));
                 prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.AVAILABLE }]);
 
-                await expect(service.reserveSeats([seat1], USER)).resolves.not.toThrow();
+                const result = await service.reserveSeats([seat1], USER);
+                expect(result.success).toBe(true);
+
+                expect(prisma.seat.findMany).toHaveBeenCalled();
+                expect(redis.watch).toHaveBeenCalled();
             });
 
             it('accepts exactly MAX_SEATS seats', async () => {
@@ -152,42 +160,63 @@ describe('TicketService.reserveSeats', () => {
                     maxSeats.map(s => ({ ...s, seat_status: SeatStatus.AVAILABLE }))
                 );
 
-                await expect(service.reserveSeats(maxSeats, USER)).resolves.not.toThrow();
+                const result = await service.reserveSeats(maxSeats, USER);
+                expect(result.success).toBe(true);
+
+                expect(prisma.seat.findMany).toHaveBeenCalled();
+                expect(redis.watch).toHaveBeenCalled();
             });
 
-            it('throws when seats array is empty', async () => {
-                await expect(service.reserveSeats([], USER)).rejects.toThrow();
+            it('returns failure when seats array is empty', async () => {
+                const result = await service.reserveSeats([], USER);
+                expect(result.success).toBe(false);
+
+                expect(prisma.seat.findMany).not.toHaveBeenCalled();
+                expect(redis.watch).not.toHaveBeenCalled();
             });
 
-            it('throws when seats array has MAX_SEATS + 1 seats', async () => {
+            it('returns failure when seats array has MAX_SEATS + 1 seats', async () => {
                 const tooMany = Array.from({ length: MAX_SEATS + 1 }, (_, i) =>
                     makeSeat({ id: `seat-uuid-${i}`, number: i + 1 })
                 );
 
-                await expect(service.reserveSeats(tooMany, USER)).rejects.toThrow();
+                const result = await service.reserveSeats(tooMany, USER);
+                expect(result.success).toBe(false);
+
+                expect(prisma.seat.findMany).not.toHaveBeenCalled();
+                expect(redis.watch).not.toHaveBeenCalled();
             });
         });
 
         describe('exception cases', () => {
-            it('throws when user is null', async () => {
-                await expect(service.reserveSeats(seats, null as any)).rejects.toThrow();
+            it('returns failure when user is null', async () => {
+                const result = await service.reserveSeats(seats, null as any);
+                expect(result.success).toBe(false);
+
+                expect(prisma.seat.findMany).not.toHaveBeenCalled();
+                expect(redis.watch).not.toHaveBeenCalled();
             });
 
-            it('throws when user is an empty string', async () => {
-                await expect(service.reserveSeats(seats, '')).rejects.toThrow();
+            it('returns failure when user is an empty string', async () => {
+                const result = await service.reserveSeats(seats, '');
+                expect(result.success).toBe(false);
+
+                expect(prisma.seat.findMany).not.toHaveBeenCalled();
+                expect(redis.watch).not.toHaveBeenCalled();
             });
 
-            it('throws when user is a whitespace-only string', async () => {
-                await expect(service.reserveSeats(seats, '   ')).rejects.toThrow();
+            it('returns failure when user is a whitespace-only string', async () => {
+                const result = await service.reserveSeats(seats, '   ');
+                expect(result.success).toBe(false);
+                
+                expect(prisma.seat.findMany).not.toHaveBeenCalled();
+                expect(redis.watch).not.toHaveBeenCalled();
             });
 
-            it('throws when seats contains duplicate ids', async () => {
-                await expect(service.reserveSeats([seat1, seat1], USER)).rejects.toThrow();
-            });
-
-            it('does not call prisma or redis when validation fails', async () => {
-                await service.reserveSeats([], USER).catch(() => {});
-
+            it('returns failure when seats contains duplicate ids', async () => {
+                const result = await service.reserveSeats([seat1, seat1], USER);
+                expect(result.success).toBe(false);
+                
                 expect(prisma.seat.findMany).not.toHaveBeenCalled();
                 expect(redis.watch).not.toHaveBeenCalled();
             });
@@ -207,7 +236,7 @@ describe('TicketService.reserveSeats', () => {
                 expect(prisma.seat.findMany).toHaveBeenCalledWith(
                     expect.objectContaining({
                         where: expect.objectContaining({
-                            OR: seats.map(s => ({
+                            and: seats.map(s => ({
                                 event_id: s.event_id,
                                 row:      s.row,
                                 number:   s.number,
