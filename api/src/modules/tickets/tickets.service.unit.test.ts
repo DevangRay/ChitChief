@@ -1,160 +1,350 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
+import { OrderStatus, SeatStatus } from '@prisma/client';
 
-const mockRedis = {
-    set: vi.fn(),
-    get: vi.fn(),
-    del: vi.fn(),
-    pipeline: vi.fn()
-}
+// ─────────────────────────────────────────────
+// Mock infrastructure
+// ─────────────────────────────────────────────
 
-const mockPrisma = {
-    seat: {
+type ExecReply = [Error | null, string | null];
+
+const makeMultiChain = (execResult: ExecReply[] | null) => ({
+    set: vi.fn().mockReturnThis(),
+    exec: vi.fn().mockResolvedValue(execResult),
+});
+
+const makeRedisMock = (execResult: ExecReply[] | null) => {
+    const multiChain = makeMultiChain(execResult);
+    return {
+        watch: vi.fn().mockResolvedValue('OK'),
+        multi: vi.fn().mockReturnValue(multiChain),
+        del: vi.fn().mockResolvedValue(1),
+        _chain: multiChain,
+    };
+};
+
+const makePrismaMock = () => ({
+    order: {
         findMany: vi.fn(),
-        updateMany: vi.fn()
-    }
-}
+        create: vi.fn(),
+    },
+    orderSeats: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 2 }),
+    },
+});
+
+// ─────────────────────────────────────────────
+// Seed data
+// ─────────────────────────────────────────────
+
+const seat1 = {
+    id: '4d17bf3c-248f-463c-8ae0-bc1de4ee519c',
+    event_id: 'b4840051-8571-4391-be32-b94142db7c3c',
+    row: 'A',
+    number: 1,
+    price: 100,
+    seat_status: SeatStatus.AVAILABLE,
+};
+
+const seat2 = {
+    id: 'dbd63efe-19c5-4ff2-b0be-97e8b3ae1dc9',
+    event_id: 'b4840051-8571-4391-be32-b94142db7c3c',
+    row: 'A',
+    number: 2,
+    price: 200,
+    seat_status: SeatStatus.AVAILABLE,
+};
+
+const existingOrder = {
+    id: 'order-1',
+    idempotency_key: 'idempotency-key-1',
+    user_id: 'user-1',
+    order_status: OrderStatus.PENDING,
+};
+
+// ─────────────────────────────────────────────
+// Exec reply builders
+// ─────────────────────────────────────────────
+
+const allOk = (n: number): ExecReply[] =>
+    Array.from({ length: n }, () => [null, 'OK']);
+
+const withConflictsAt = (n: number, indices: number[]): ExecReply[] =>
+    Array.from({ length: n }, (_, i) =>
+        indices.includes(i) ? [null, null] : [null, 'OK']
+    );
+
+const withErrorAt = (n: number, indices: number[]): ExecReply[] =>
+    Array.from({ length: n }, (_, i) =>
+        indices.includes(i) ? [new Error('ERR'), null] : [null, 'OK']
+    );
+
+// ─────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────
 
 describe('TicketService', () => {
+    const user = 'user-1';
+    const seats = [seat1, seat2];
+
+    let redis: ReturnType<typeof makeRedisMock>;
+    let prisma: ReturnType<typeof makePrismaMock>;
     let service: TicketService;
 
+    // Default: happy path — existing order, all locks succeed
     beforeEach(() => {
-        vi.clearAllMocks()
-        service = new TicketService(mockRedis as any, mockPrisma as any)
-    })
+        redis = makeRedisMock(allOk(seats.length));
+        prisma = makePrismaMock();
+        prisma.order.findMany.mockResolvedValue([existingOrder]);
+        service = new TicketService(redis as any, prisma as any);
+    });
 
     describe('reserveSeats', () => {
-        // Normal case
-        it('should return a reservation token when seats are available', async () => {
-            mockPrisma.seat.findMany.mockResolvedValue([
-                { id: 'seat-1', seat_status: 'AVAILABLE', price: 10000 }
-            ]);
 
-            mockRedis.pipeline.mockReturnValue({
-                set: vi.fn().mockReturnThis(),
-                exec: vi.fn().mockResolvedValue([['OK']])
+        // ── Equivalence (normal) cases ──────────────────────────────────────
+
+        describe('equivalence cases', () => {
+            it('returns success:true with reservation_token and expires_at when all locks acquired', async () => {
+                const result = await service.reserveSeats(seats, user);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    expect(result.reservation_token).toBe(existingOrder.idempotency_key);
+                    expect(result.expires_at).toBeDefined();
+                }
             });
 
-            const result = await service.reserveSeats(['seat-1'], 'user-1');
+            it('uses the existing pending order without creating a new one', async () => {
+                await service.reserveSeats(seats, user);
 
-            expect(result.success).toBe(true);
-            if (result.success === true) {
-                expect(result.reservation_token).toBeDefined();
-                expect(result.expires_at).toBeDefined();
-            }
-        })
+                expect(prisma.order.findMany).toHaveBeenCalledWith({
+                    where: { user_id: user, order_status: 'PENDING' },
+                });
+                expect(prisma.order.create).not.toHaveBeenCalled();
+            });
 
-        it('should lock multiple seats atomically', async () => {
-            mockPrisma.seat.findMany.mockResolvedValue([
-                { id: 'seat-1', seat_status: 'AVAILABLE', price: 10000 },
-                { id: 'seat-2', seat_status: 'AVAILABLE', price: 10000 },
-            ])
-            const mockPipeline = {
-                set: vi.fn().mockReturnThis(),
-                exec: vi.fn().mockResolvedValue([['OK'], ['OK']])
-            }
-            mockRedis.pipeline.mockReturnValue(mockPipeline)
+            it('creates a new pending order when none exists for the user', async () => {
+                prisma.order.findMany.mockResolvedValue([]);
+                prisma.order.create.mockResolvedValue(existingOrder);
 
-            await service.reserveSeats(['seat-1', 'seat-2'], 'user-1')
+                await service.reserveSeats(seats, user);
 
-            // Pipeline should have been called once with both locks
-            expect(mockPipeline.set).toHaveBeenCalledTimes(2)
-            expect(mockPipeline.set).toHaveBeenCalledWith(
-                'lock:seat:seat-1',
-                'user-1',
-                'EX', 60,
-                'NX'
-            )
-        })
+                expect(prisma.order.create).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        data: expect.objectContaining({
+                            user_id: user,
+                            order_status: 'PENDING',
+                            idempotency_key: expect.any(String),
+                        }),
+                    })
+                );
+            });
 
-        // Boundary cases
-        it('should reject an empty seat list', async () => {
-            await expect(service.reserveSeats([], 'user-1'))
-                .rejects.toThrow('At least one seat must be selected')
-        })
+            it('watches all seat lock keys before executing the transaction', async () => {
+                await service.reserveSeats(seats, user);
 
-        it('should reject more than 10 seats in a single reservation', async () => {
-            const seats = Array.from({ length: 11 }, (_, i) => `seat-${i}`)
-            await expect(service.reserveSeats(seats, 'user-1'))
-                .rejects.toThrow('Cannot reserve more than 10 seats at once')
-        })
+                expect(redis.watch).toHaveBeenCalledWith([
+                    `seat_lock_${seat1.id}`,
+                    `seat_lock_${seat2.id}`,
+                ]);
+            });
 
-        // Exception cases
-        it('should return 409 when a seat is already reserved', async () => {
-            mockPrisma.seat.findMany.mockResolvedValue([
-                { id: 'seat-1', seat_status: 'RESERVED', price: 10000 }
-            ])
+            it('sets each lock with the user id as value, using NX and PXAT', async () => {
+                await service.reserveSeats(seats, user);
 
-            const result = await service.reserveSeats(['seat-1'], 'user-1')
+                expect(redis._chain.set).toHaveBeenCalledWith(
+                    `seat_lock_${seat1.id}`, user, 'NX', 'PXAT', expect.any(Number)
+                );
+                expect(redis._chain.set).toHaveBeenCalledWith(
+                    `seat_lock_${seat2.id}`, user, 'NX', 'PXAT', expect.any(Number)
+                );
+            });
 
-            expect(result.success).toBe(false)
-            if (result.success === false) {
-                expect(result.conflict_seat_ids).toContain('seat-1')
-            }
-        })
+            it('writes OrderSeats to DB only after all locks are acquired', async () => {
+                const callOrder: string[] = [];
+                redis._chain.exec.mockImplementation(async () => {
+                    callOrder.push('exec');
+                    return allOk(seats.length);
+                });
+                prisma.orderSeats.createMany.mockImplementation(async () => {
+                    callOrder.push('createMany');
+                    return { count: 2 };
+                });
 
-        it('should return 409 when a seat is already sold', async () => {
-            mockPrisma.seat.findMany.mockResolvedValue([
-                { id: 'seat-1', seat_status: 'SOLD', price: 10000 }
-            ])
+                await service.reserveSeats(seats, user);
 
-            const result = await service.reserveSeats(['seat-1'], 'user-1')
+                expect(callOrder.indexOf('exec')).toBeLessThan(callOrder.indexOf('createMany'));
+            });
 
-            expect(result.success).toBe(false)
-            if (result.success === false) {
-                expect(result.conflict_seat_ids).toContain('seat-1')
-            }
-        })
+            it('deletes existing OrderSeats then creates new ones on success', async () => {
+                await service.reserveSeats(seats, user);
 
-        it('should return 404 when a seat does not exist', async () => {
-            mockPrisma.seat.findMany.mockResolvedValue([]) // DB returns nothing
+                expect(prisma.orderSeats.deleteMany).toHaveBeenCalledWith({
+                    where: { order_id: existingOrder.id },
+                });
+                expect(prisma.orderSeats.createMany).toHaveBeenCalledWith({
+                    data: seats.map((seat) => ({
+                        order_id: existingOrder.id,
+                        seat_id: seat.id,
+                        price_at_purchase: seat.price,
+                    })),
+                });
+            });
 
-            await expect(service.reserveSeats(['nonexistent-id'], 'user-1'))
-                .rejects.toThrow('One or more seats not found')
-        })
+            it('returns success:false with only the conflicting seat ids when a lock is not acquired', async () => {
+                redis = makeRedisMock(withConflictsAt(seats.length, [0]));
+                service = new TicketService(redis as any, prisma as any);
 
-        it('should release all locks if any lock in the pipeline fails', async () => {
-            mockPrisma.seat.findMany.mockResolvedValue([
-                { id: 'seat-1', seat_status: 'AVAILABLE', price: 10000 },
-                { id: 'seat-2', seat_status: 'AVAILABLE', price: 10000 },
-            ])
-            // seat-2 lock fails (returns null = NX condition not met)
-            const mockPipeline = {
-                set: vi.fn().mockReturnThis(),
-                exec: vi.fn().mockResolvedValue([['OK'], [null]])
-            }
-            mockRedis.pipeline.mockReturnValue(mockPipeline)
-            mockRedis.del.mockResolvedValue(1)
+                const result = await service.reserveSeats(seats, user);
 
-            const result = await service.reserveSeats(['seat-1', 'seat-2'], 'user-1')
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toContainEqual(seat1);
+                    expect(result.conflict_seat_ids).not.toContainEqual(seat2);
+                }
+            });
+        });
 
-            expect(result.success).toBe(false)
-            // Should have cleaned up seat-1's lock even though it succeeded
-            expect(mockRedis.del).toHaveBeenCalledWith('lock:seat:seat-1')
-        })
-    })
+        // ── Boundary cases ──────────────────────────────────────────────────
 
-    describe('releaseReservation', () => {
-        it('should delete redis lock and set seat back to AVAILABLE', async () => {
-            mockRedis.del.mockResolvedValue(1)
-            mockPrisma.seat.updateMany.mockResolvedValue({ count: 1 })
+        describe('boundary cases', () => {
+            it('succeeds with exactly one seat', async () => {
+                redis = makeRedisMock(allOk(1));
+                service = new TicketService(redis as any, prisma as any);
 
-            await service.releaseReservation(['seat-1'])
+                const result = await service.reserveSeats([seat1], user);
 
-            expect(mockRedis.del).toHaveBeenCalledWith('lock:seat:seat-1')
-            expect(mockPrisma.seat.updateMany).toHaveBeenCalledWith({
-                where: { id: { in: ['seat-1'] } },
-                data: { seat_status: 'AVAILABLE' }
-            })
-        })
+                expect(result.success).toBe(true);
+            });
 
-        it('should handle releasing a lock that has already expired', async () => {
-            mockRedis.del.mockResolvedValue(0) // 0 = key didn't exist
-            mockPrisma.seat.updateMany.mockResolvedValue({ count: 1 })
+            it('sets lock expiration approximately 60 seconds from now', async () => {
+                const before = Date.now();
+                await service.reserveSeats(seats, user);
+                const after = Date.now();
 
-            // Should not throw — this is a valid state
-            await expect(service.releaseReservation(['seat-1']))
-                .resolves.not.toThrow()
-        })
-    })
-})
+                // Extract the PXAT timestamp from the first .set() call
+                const pxatArg = redis._chain.set.mock.calls[0][4] as number;
+                expect(pxatArg).toBeGreaterThanOrEqual(before + 60000);
+                expect(pxatArg).toBeLessThanOrEqual(after + 60000);
+            });
+
+            it('returns all seats as conflicting when WATCH fires (exec returns null)', async () => {
+                redis = makeRedisMock(null);
+                service = new TicketService(redis as any, prisma as any);
+
+                const result = await service.reserveSeats(seats, user);
+
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toEqual(seats);
+                }
+            });
+
+            it('returns only the one conflicting seat when exactly one of two fails', async () => {
+                redis = makeRedisMock(withConflictsAt(seats.length, [1]));
+                service = new TicketService(redis as any, prisma as any);
+
+                const result = await service.reserveSeats(seats, user);
+
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toHaveLength(1);
+                    expect(result.conflict_seat_ids[0]).toEqual(seat2);
+                }
+            });
+
+            it('returns all seats as conflicting when every lock fails', async () => {
+                redis = makeRedisMock(withConflictsAt(seats.length, [0, 1]));
+                service = new TicketService(redis as any, prisma as any);
+
+                const result = await service.reserveSeats(seats, user);
+
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toEqual(seats);
+                }
+            });
+        });
+
+        // ── Exception cases ─────────────────────────────────────────────────
+
+        describe('exception cases', () => {
+            it('releases only the successfully acquired locks on partial conflict', async () => {
+                // seat1 acquired (OK), seat2 already locked (null)
+                redis = makeRedisMock(withConflictsAt(seats.length, [1]));
+                service = new TicketService(redis as any, prisma as any);
+
+                await service.reserveSeats(seats, user);
+
+                expect(redis.del).toHaveBeenCalledWith([`seat_lock_${seat1.id}`]);
+            });
+
+            it('does not call del when no locks were acquired', async () => {
+                redis = makeRedisMock(withConflictsAt(seats.length, [0, 1]));
+                service = new TicketService(redis as any, prisma as any);
+
+                await service.reserveSeats(seats, user);
+
+                expect(redis.del).not.toHaveBeenCalled();
+            });
+
+            it('does not call del when WATCH fires', async () => {
+                redis = makeRedisMock(null);
+                service = new TicketService(redis as any, prisma as any);
+
+                await service.reserveSeats(seats, user);
+
+                expect(redis.del).not.toHaveBeenCalled();
+            });
+
+            it('does not write OrderSeats to DB when any lock fails', async () => {
+                redis = makeRedisMock(withConflictsAt(seats.length, [0]));
+                service = new TicketService(redis as any, prisma as any);
+
+                await service.reserveSeats(seats, user);
+
+                expect(prisma.orderSeats.createMany).not.toHaveBeenCalled();
+            });
+
+            it('does not write OrderSeats to DB when WATCH fires', async () => {
+                redis = makeRedisMock(null);
+                service = new TicketService(redis as any, prisma as any);
+
+                await service.reserveSeats(seats, user);
+
+                expect(prisma.orderSeats.createMany).not.toHaveBeenCalled();
+            });
+
+            it('treats a command-level error reply as a lock failure', async () => {
+                redis = makeRedisMock(withErrorAt(seats.length, [0]));
+                service = new TicketService(redis as any, prisma as any);
+
+                const result = await service.reserveSeats(seats, user);
+
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toContainEqual(seat1);
+                }
+            });
+
+            it('propagates when redis.watch rejects', async () => {
+                redis.watch.mockRejectedValue(new Error('Redis connection lost'));
+
+                await expect(service.reserveSeats(seats, user)).rejects.toThrow('Redis connection lost');
+            });
+
+            it('propagates when prisma.order.findMany rejects', async () => {
+                prisma.order.findMany.mockRejectedValue(new Error('DB connection lost'));
+
+                await expect(service.reserveSeats(seats, user)).rejects.toThrow('DB connection lost');
+            });
+
+            it('propagates when prisma.orderSeats.createMany rejects after locks are acquired', async () => {
+                prisma.orderSeats.createMany.mockRejectedValue(new Error('DB write failed'));
+
+                await expect(service.reserveSeats(seats, user)).rejects.toThrow('DB write failed');
+            });
+        });
+    });
+});
