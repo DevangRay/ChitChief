@@ -1,15 +1,13 @@
 import { FastifyInstance } from "fastify";
-import { getEventsSchema, getEventByIdSchema, getSeatsOfEventByIdSchema } from "../events/events.schema";
-import EventsService from "../events/events.service";
 import { TicketService } from "./tickets.service";
+import { Seat } from "@prisma/client";
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
-    const eventService = new EventsService(fastify.prisma);
     const service = new TicketService(fastify.redis, fastify.prisma);
 
     fastify.get('/reserve', async (request, reply) => {
         try {
-            const seats_array: { number: number; id: string; event_id: string; row: string; price: number; seat_status: 'AVAILABLE' | 'RESERVED' | 'SOLD' }[] = [
+            const seats_array: Seat[] = [
                 {
                     id: '4d17bf3c-248f-463c-8ae0-bc1de4ee519c',
                     event_id: 'b4840051-8571-4391-be32-b94142db7c3c',
@@ -42,75 +40,4 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             return reply.status(500).send({ message: 'Internal server error.' });
         }
     })
-
-    fastify.get('/', { schema: getEventsSchema }, async (request, reply) => {
-        try {
-            const events = await eventService.getEvents();
-
-            return reply.status(200).send(events);
-        } catch (error) {
-            fastify.log.error({ error }, '[GET /events/] Failed to query events');
-            return reply.status(500).send({ message: 'Internal server error.' });
-        }
-    }),
-
-        fastify.get<{ Params: { id: string } }>('/:id', { schema: getEventByIdSchema }, async (request, reply) => {
-            const { id } = request.params;
-            try {
-                const event = await eventService.getEventById(id);
-
-                if (!event) {
-                    return reply.status(404).send({ message: "Event not found." });
-                }
-
-                return reply.status(200).send(event);
-            } catch (error) {
-                fastify.log.error({ error }, '[GET /events/:id] Failed to query events for id:', id);
-                return reply.status(500).send({ message: 'Internal server error.' });
-            }
-        }),
-
-        fastify.get<{ Params: { id: string }, Querystring: { status: "AVAILABLE" | "RESERVED" | "SOLD" } }>('/:id/seats', { schema: getSeatsOfEventByIdSchema }, async (request, reply) => {
-            const { id } = request.params;
-            const status = request.query.status;
-            try {
-                const event_seats = await eventService.getSeatsForEventById(id, status);
-
-                if (event_seats.length === 0) {
-                    return reply.status(404).send({ message: 'Seats not found.' });
-                }
-
-                return reply.status(200).send(event_seats);
-            } catch (error) {
-                fastify.log.error({ error }, '[GET /events/:id/seats] Failed to query events for id:', id);
-                return reply.status(500).send({ message: 'Internal server error.' });
-            }
-        })
-
-    // fastify.get('/streams', async (request, reply) => {
-    //     // We write an event to the stream 'my awesome fastify stream name', setting 'key' to 'value'
-    //     await fastify.redis.xadd(['my awesome fastify stream name', '*', 'hello', 'fastify is awesome'])
-
-    //     // We read events from the beginning of the stream called 'my awesome fastify stream name'
-    //     let redisStream = await fastify.redis.xread(['STREAMS', 'my awesome fastify stream name', 0])
-
-    //     // We parse the results
-    //     let response = []
-    //     let events = redisStream![0]![1]
-
-    //     for (let i = 0; i < events.length; i++) {
-    //         const e = events[i]
-    //         response.push(`#LOG: id is ${e[0].toString()}`)
-
-    //         // We log each key
-    //         for (const key in e![1]) {
-    //             response.push(e![1][key]!.toString())
-    //         }
-    //     }
-
-    //     reply.status(200)
-    //     return { output: response }
-    //     // Will return something like this :
-    //     // { "output": ["#LOG: id is 1559985742035-0", "hello", "fastify is awesome"] }
-    // })
 }
