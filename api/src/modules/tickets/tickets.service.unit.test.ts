@@ -2,10 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
 import { OrderStatus, SeatStatus } from '@prisma/client';
 
-// ─────────────────────────────────────────────
-// Mock infrastructure
-// ─────────────────────────────────────────────
 
+// Setting up mocks
 type ExecReply = [Error | null, string | null];
 
 const makeMultiChain = (execResult: ExecReply[] | null) => ({
@@ -34,10 +32,8 @@ const makePrismaMock = () => ({
     },
 });
 
-// ─────────────────────────────────────────────
-// Seed data
-// ─────────────────────────────────────────────
 
+// Constant values
 const seat1 = {
     id: '4d17bf3c-248f-463c-8ae0-bc1de4ee519c',
     event_id: 'b4840051-8571-4391-be32-b94142db7c3c',
@@ -63,10 +59,8 @@ const existingOrder = {
     order_status: OrderStatus.PENDING,
 };
 
-// ─────────────────────────────────────────────
-// Exec reply builders
-// ─────────────────────────────────────────────
 
+// Functions required for redis exec
 const allOk = (n: number): ExecReply[] =>
     Array.from({ length: n }, () => [null, 'OK']);
 
@@ -80,9 +74,6 @@ const withErrorAt = (n: number, indices: number[]): ExecReply[] =>
         indices.includes(i) ? [new Error('ERR'), null] : [null, 'OK']
     );
 
-// ─────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────
 
 describe('TicketService', () => {
     const user = 'user-1';
