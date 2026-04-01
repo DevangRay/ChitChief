@@ -11,6 +11,10 @@ declare module 'fastify' {
 async function redis(fastify: FastifyInstance) {
     const redis = new Redis({ host: 'localhost', port: 6379 });
 
+    redis.on('error', (error) => {
+        console.error('Redis connection error:', error);
+    })
+
     fastify.decorate('redis', redis);
     fastify.addHook('onClose', async () => await redis.quit());
 }
