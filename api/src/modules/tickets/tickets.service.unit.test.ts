@@ -104,7 +104,7 @@ const makeService = (execResult: ExecReply[] | null) => {
         seats.map(s => ({ ...s, seat_status: SeatStatus.AVAILABLE }))
     );
 
-    const service = new TicketService(redis as any, prisma as any, queue as any, jwt as any);
+    const service = new TicketService(redis as any, prisma as any, jwt as any, queue as any);
     return { service, redis, prisma, queue, jwt };
 };
 
@@ -613,8 +613,10 @@ describe('TicketService.reserveSeats', () => {
                     expect.objectContaining({
                         seat_ids: seats.map(s => s.id),
                         expires_at: expect.any(Number),
+                        user_uuid: expect.any(String)
                     }),
                     expect.anything(), // secret — opaque to this test
+                    expect.anything(), // expiresIn — opaque to this test
                 );
             });
 
