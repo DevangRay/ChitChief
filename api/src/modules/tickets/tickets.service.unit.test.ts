@@ -227,13 +227,12 @@ describe('TicketService.reserveSeats', () => {
 
                 expect(prisma.seat.findMany).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        where: expect.objectContaining({
-                            and: seats.map(s => ({
-                                event_id: s.event_id,
-                                row:      s.row,
-                                number:   s.number,
-                            })),
-                        }),
+                        where: {
+                            id: {
+                                in: seats.map(s => s.id)
+                            },
+                            seat_status: SeatStatus.AVAILABLE
+                        },
                     })
                 );
             });
@@ -246,7 +245,6 @@ describe('TicketService.reserveSeats', () => {
 
             it('returns success:false without touching Redis when any seat is unavailable', async () => {
                 prisma.seat.findMany.mockResolvedValue([
-                    { ...seat1, seat_status: SeatStatus.RESERVED },
                     { ...seat2, seat_status: SeatStatus.AVAILABLE },
                 ]);
 
@@ -261,7 +259,6 @@ describe('TicketService.reserveSeats', () => {
             it('returns only the one non-AVAILABLE seat as a conflict', async () => {
                 prisma.seat.findMany.mockResolvedValue([
                     { ...seat1, seat_status: SeatStatus.AVAILABLE },
-                    { ...seat2, seat_status: SeatStatus.RESERVED },
                 ]);
 
                 const result = await service.reserveSeats(seats, USER);
@@ -275,8 +272,6 @@ describe('TicketService.reserveSeats', () => {
 
             it('returns all seats as conflicts when every seat is unavailable', async () => {
                 prisma.seat.findMany.mockResolvedValue([
-                    { ...seat1, seat_status: SeatStatus.SOLD },
-                    { ...seat2, seat_status: SeatStatus.RESERVED },
                 ]);
 
                 const result = await service.reserveSeats(seats, USER);
@@ -290,7 +285,7 @@ describe('TicketService.reserveSeats', () => {
 
         describe('exception cases', () => {
             it('treats RESERVED seats as conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.RESERVED }]);
+                prisma.seat.findMany.mockResolvedValue([]);
 
                 const result = await service.reserveSeats([seat1], USER);
 
@@ -298,7 +293,7 @@ describe('TicketService.reserveSeats', () => {
             });
 
             it('treats SOLD seats as conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.SOLD }]);
+                prisma.seat.findMany.mockResolvedValue([]);
 
                 const result = await service.reserveSeats([seat1], USER);
 
@@ -507,7 +502,7 @@ describe('TicketService.reserveSeats', () => {
             });
 
             it('does not call updateMany when DB availability check finds conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.RESERVED }]);
+                prisma.seat.findMany.mockResolvedValue([]);
 
                 await service.reserveSeats([seat1], USER);
 
@@ -583,7 +578,7 @@ describe('TicketService.reserveSeats', () => {
             });
 
             it('does not call queue.add when DB availability check fails', async () => {
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.RESERVED }]);
+                prisma.seat.findMany.mockResolvedValue([]);
 
                 await service.reserveSeats([seat1], USER);
 
@@ -679,7 +674,7 @@ describe('TicketService.reserveSeats', () => {
             });
 
             it('does not call jwt.sign when DB availability check finds conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.RESERVED }]);
+                prisma.seat.findMany.mockResolvedValue([]);
 
                 await service.reserveSeats([seat1], USER);
 
