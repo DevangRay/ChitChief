@@ -94,10 +94,10 @@ const withErrorAt = (n: number, indices: number[]): ExecReply[] =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 const makeService = (execResult: ExecReply[] | null) => {
-    const redis  = makeRedisMock(execResult);
+    const redis = makeRedisMock(execResult);
     const prisma = makePrismaMock();
-    const queue  = makeQueueMock();
-    const jwt    = makeJwtMock();
+    const queue = makeQueueMock();
+    const jwt = makeJwtMock();
 
     // Default happy-path DB state — override per test as needed
     prisma.seat.findMany.mockResolvedValue(
@@ -113,10 +113,10 @@ const makeService = (execResult: ExecReply[] | null) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TicketService.reserveSeats', () => {
-    let redis:   ReturnType<typeof makeRedisMock>;
-    let prisma:  ReturnType<typeof makePrismaMock>;
-    let queue:   ReturnType<typeof makeQueueMock>;
-    let jwt:     ReturnType<typeof makeJwtMock>;
+    let redis: ReturnType<typeof makeRedisMock>;
+    let prisma: ReturnType<typeof makePrismaMock>;
+    let queue: ReturnType<typeof makeQueueMock>;
+    let jwt: ReturnType<typeof makeJwtMock>;
     let service: TicketService;
 
     beforeEach(() => {
@@ -141,7 +141,7 @@ describe('TicketService.reserveSeats', () => {
 
         describe('boundary cases', () => {
             it('accepts exactly 1 seat (minimum)', async () => {
-                const { service, prisma } = makeService(allOk(1));
+                const { service, prisma, redis } = makeService(allOk(1)); // add redis here
                 prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.AVAILABLE }]);
 
                 const result = await service.reserveSeats([seat1], USER);
@@ -155,7 +155,7 @@ describe('TicketService.reserveSeats', () => {
                 const maxSeats = Array.from({ length: MAX_SEATS }, (_, i) =>
                     makeSeat({ id: `seat-uuid-${i}`, number: i + 1 })
                 );
-                const { service, prisma } = makeService(allOk(MAX_SEATS));
+                const { service, prisma, redis } = makeService(allOk(MAX_SEATS));
                 prisma.seat.findMany.mockResolvedValue(
                     maxSeats.map(s => ({ ...s, seat_status: SeatStatus.AVAILABLE }))
                 );
@@ -208,7 +208,7 @@ describe('TicketService.reserveSeats', () => {
             it('returns failure when seats contains duplicate ids', async () => {
                 const result = await service.reserveSeats([seat1, seat1], USER);
                 expect(result.success).toBe(false);
-                
+
                 expect(prisma.seat.findMany).not.toHaveBeenCalled();
                 expect(redis.watch).not.toHaveBeenCalled();
             });
@@ -454,7 +454,7 @@ describe('TicketService.reserveSeats', () => {
 
                 expect(prisma.seat.updateMany).toHaveBeenCalledWith({
                     where: { id: { in: seats.map(s => s.id) } },
-                    data:  { seat_status: SeatStatus.RESERVED },
+                    data: { seat_status: SeatStatus.RESERVED },
                 });
             });
 
@@ -484,7 +484,7 @@ describe('TicketService.reserveSeats', () => {
 
                 expect(prisma.seat.updateMany).toHaveBeenCalledWith({
                     where: { id: { in: [seat1.id] } },
-                    data:  { seat_status: SeatStatus.RESERVED },
+                    data: { seat_status: SeatStatus.RESERVED },
                 });
             });
         });
@@ -541,7 +541,7 @@ describe('TicketService.reserveSeats', () => {
                 expect(queue.add).toHaveBeenCalledWith(
                     expect.any(String),
                     expect.objectContaining({
-                        seat_ids:   seats.map(s => s.id),
+                        seat_ids: seats.map(s => s.id),
                         expires_at: expect.any(Number),
                     }),
                     expect.anything(),
@@ -616,7 +616,7 @@ describe('TicketService.reserveSeats', () => {
 
                 expect(jwt.sign).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        seat_ids:   seats.map(s => s.id),
+                        seat_ids: seats.map(s => s.id),
                         expires_at: expect.any(Number),
                     }),
                     expect.anything(), // secret — opaque to this test
@@ -634,7 +634,7 @@ describe('TicketService.reserveSeats', () => {
             it('returns expires_at as an ISO string approximately 60 seconds from now', async () => {
                 const before = Date.now() + 60000;
                 const result = await service.reserveSeats(seats, USER);
-                const after  = Date.now() + 60000;
+                const after = Date.now() + 60000;
 
                 if (result.success) {
                     const ts = new Date(result.expires_at).getTime();
@@ -687,7 +687,7 @@ describe('TicketService.reserveSeats', () => {
             });
 
             it('does not call jwt.sign when validation fails', async () => {
-                await service.reserveSeats([], USER).catch(() => {});
+                await service.reserveSeats([], USER).catch(() => { });
 
                 expect(jwt.sign).not.toHaveBeenCalled();
             });
