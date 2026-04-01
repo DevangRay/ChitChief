@@ -1,9 +1,10 @@
-import { Seat } from "@prisma/client"
+import { Seat, SeatStatus } from "@prisma/client"
 
 type SuccessfulReservation = {
     success: true,
     reservation_token: string,
-    expires_at: string
+    expires_at: number,
+    expires_at_string: string
 }
 
 type FailedReservation = {
@@ -13,69 +14,169 @@ type FailedReservation = {
 
 type ReservationObject = SuccessfulReservation | FailedReservation
 
+
 export class TicketService {
-    constructor(private readonly redis: any, private readonly prisma: any) { }
+    constructor(private readonly redis: any, private readonly prisma: any, private readonly jwt: any) { }
 
     async reserveSeats(seats: Seat[], user: string): Promise<ReservationObject> {
-        // 1. Get Order from DB for user. If no pending order exists, create one.
-        let pending_order = await this.prisma.order.findMany({
+        // 1. Validate seats and user
+        console.log("[reserveSeats] Validating seats and user parameters.");
+        if (seats.length === 0 || seats.length > 10) {
+            console.log("[reserveSeats] Invalid number of seats provided for reservation.");
+            return {
+                success: false,
+                conflict_seat_ids: []
+            };
+        }
+        if (!user) {
+            console.log("[reserveSeats] No user provided for reservation.");
+            return {
+                success: false,
+                conflict_seat_ids: []
+            };
+        }
+
+        for (const seat of seats) {
+            if (!seat.id || !seat.price) {
+                console.log("[reserveSeats] Invalid seat object provided:", seat);
+                return {
+                    success: false,
+                    conflict_seat_ids: []
+                };
+            }
+        }
+
+        const unique_seat_ids = new Set(seats.map(seat => seat.id));
+        if (unique_seat_ids.size !== seats.length) {
+            console.log("[reserveSeats] Duplicate seat ids provided in reservation request.");
+            return {
+                success: false,
+                conflict_seat_ids: []
+            };
+        }
+        console.log("[reserveSeats] Validation successful for seats and user.");
+
+        // 2. Check seats are available and not sold in DB
+        console.log("[reserveSeats] Checking seat availability in database for seat ids:");
+        const seat_statuses = await this.prisma.seat.findMany({
             where: {
-                user_id: user,
-                order_status: 'PENDING'
+                id: {
+                    in: [...unique_seat_ids]
+                },
+                seat_status: SeatStatus.AVAILABLE
             }
         });
 
-        if (pending_order.length === 0) {
-            console.log("No pending orders for user:", user);
-            console.log("Creating a user order");
+        if (seat_statuses.length !== seats.length) {
+            console.log("[reserveSeats] Some seats are not available.");
 
-            pending_order = [await this.prisma.order.create({
-                data: {
-                    user_id: user,
-                    order_status: 'PENDING',
-                    idempotency_key: crypto.randomUUID()
-                }
-            })];
+            const available_seat_ids = new Set(seat_statuses.map((s: Seat) => s.id));
+            const unavailable_seats = seats.filter(seat => !available_seat_ids.has(seat.id));
+            return {
+                success: false,
+                conflict_seat_ids: unavailable_seats
+            }
+        }
+        console.log("[reserveSeats] Seats are available.")
 
-            console.log("Inserted order:");
-            console.dir(pending_order);
+        // 3. Attempt to acquire locks for all seats. If any lock fails, release all locks and return failure response with conflicting seat ids.
+        const array = seats.map((seat) => `seat_lock_${seat.id}`);
+        const expiration_timestamp = Date.now() + 60000; // current time in seconds + 60 seconds
+        console.log("[reserveSeats] Attempting to acquire locks for seats:", array);
+
+        console.log("CALLING WATCH")
+        await this.redis.watch(array);
+        console.log("CALLED WATCH")
+        let multi_chain = this.redis.multi();
+        for (const key of array) {
+            multi_chain = multi_chain.set(key, user, 'NX', 'PXAT', expiration_timestamp);
+        }
+        const return_value: [Error | null, string | null][] = await multi_chain.exec();
+
+        // console.log("DEBUG: [reserveSeats] Checking current keys in Redis:");
+        // await this.redis.keys('*').then((keys: string[]) => {
+        //     console.log('All keys:', keys);
+        // }).catch((err: any) => {
+        //     console.error(err);
+        // });
+
+        console.log("[reserveSeats] Return value from Redis EXEC command:", return_value);
+        if (return_value === null) {
+            console.log("[reserveSeats] Watched key was externally modified between WATCH and EXEC. Returning failure.");
+            return {
+                success: false,
+                conflict_seat_ids: seats,
+            };
+        }
+
+        const conflicting_seats: Seat[] = [];
+        const accepted_seat_ids: string[] = [];
+
+        for (let i = 0; i < return_value.length; i++) {
+            if (return_value[i] === null || return_value[i]![0] !== null || return_value[i]![1] !== 'OK') {
+                console.log("[reserveSeats] Failed to acquire lock for key with index:", i, "Result:", return_value[i], "Seat ID:", seats[i]!.id);
+                conflicting_seats.push(seats[i]!);
+            } else {
+                console.log("[reserveSeats] Successfully acquired lock for key with index:", i, "and Seat ID:", seats[i]!.id);
+                accepted_seat_ids.push(array[i]!);
+            }
+        }
+        if (conflicting_seats.length > 0) {
+            console.log("[reserveSeats] Failed to acquire locks for all keys. Conflicting seat ids:", conflicting_seats.join(', '));
+            if (accepted_seat_ids.length > 0) {
+                console.log("[reserveSeats] Releasing locks for accepted seat ids:", accepted_seat_ids.join(', '));
+                await this.redis.del(accepted_seat_ids);
+            } else {
+                console.log("[reserveSeats] No locks were acquired, so no locks to release.");
+            }
+
+            return {
+                success: false,
+                conflict_seat_ids: conflicting_seats
+            }
         } else {
-            console.log("Pending order already exists for user:", user);
-            console.dir(pending_order);
+            console.log("[reserveSeats] Successfully acquired locks for all keys.");
         }
 
-        // 2. Create OrderSeats for Order
-        const order_seats_delete_status = await this.prisma.orderSeats.deleteMany({
+        // 4. Update all seats to RESERVED in DB
+        console.log("[reserveSeats] Updating seat statuses to RESERVED in database.");
+        const update_result = await this.prisma.seat.updateMany({
             where: {
-                order_id: pending_order[0].id
+                id: {
+                    in: [...unique_seat_ids]
+                }
+            },
+            data: {
+                seat_status: SeatStatus.RESERVED
             }
-        });
-        console.log("OrderSeats delete status:");
-        console.dir(order_seats_delete_status);
+        })
 
-        const order_seats_create_status = await this.prisma.orderSeats.createMany({
-            data: seats.map((seat) => ({
-                order_id: pending_order[0].id,
-                seat_id: seat.id,
-                price_at_purchase: seat.price
-            }))
-        });
-        console.log("OrderSeats create status:");
-        console.dir(order_seats_create_status);
+        console.log("[reserveSeats] Database update result:", update_result);
+        console.log("[reserveSeats] Seats are reserved");
 
-        let success = false;
-        console.log("success: " + success)
-        return success ? {
-            success: true,
-            reservation_token: 'reply === null. mykey | myvalue',
-            expires_at: new Date(Date.now() + 60000).toISOString()
-        } : {
-            success: false,
-            conflict_seat_ids: seats,
+        // 5. Enqueue BullMQ job to release locks and set seats back to AVAILABLE after expiration time
+
+        // 6. Return reserved_seat_ids, expires_at, and reservation_token (NOT idempotency key, signed payload containing seat_ids and expiry)
+        console.log("[reserveSeats] Generating reservation token to return.");
+
+        const signable_payload = {
+            seat_ids: seats.map(seat => seat.id),
+            expires_at: expiration_timestamp,
+            user_uuid: user
         }
-    }
+        const signed_token = this.jwt.sign(
+            signable_payload,
+            "supe#$%#$rwdfas3423oi4uoq3iueoq3u4o2i3u4o23u4oq3iu4o2u3oupoiwaudiasduhfiasuhfi23u4hi23u4h2i3hri23uhdrsecret",
+            {
+                expiresIn: 60
+            }
+        );
 
-    async releaseReservation(seats: string[]) {
-        throw new Error('Not implemented');
+        return {
+            success: true,
+            reservation_token: signed_token,
+            expires_at: expiration_timestamp,
+            expires_at_string: new Date(expiration_timestamp).toString()
+        }
     }
 }
