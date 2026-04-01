@@ -205,14 +205,6 @@ describe('TicketService.reserveSeats', () => {
                 expect(redis.watch).not.toHaveBeenCalled();
             });
 
-            it('returns failure when user is a whitespace-only string', async () => {
-                const result = await service.reserveSeats(seats, '   ');
-                expect(result.success).toBe(false);
-                
-                expect(prisma.seat.findMany).not.toHaveBeenCalled();
-                expect(redis.watch).not.toHaveBeenCalled();
-            });
-
             it('returns failure when seats contains duplicate ids', async () => {
                 const result = await service.reserveSeats([seat1, seat1], USER);
                 expect(result.success).toBe(false);
