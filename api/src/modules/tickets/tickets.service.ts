@@ -15,6 +15,8 @@ type FailedReservation = {
 type ReservationObject = SuccessfulReservation | FailedReservation
 
 
+const TTL_TIME_IN_SECONDS = 60;
+
 export class TicketService {
     constructor(private readonly redis: any, private readonly prisma: any, private readonly jwt: any) { }
 
@@ -81,7 +83,7 @@ export class TicketService {
 
         // 3. Attempt to acquire locks for all seats. If any lock fails, release all locks and return failure response with conflicting seat ids.
         const array = seats.map((seat) => `seat_lock_${seat.id}`);
-        const expiration_timestamp = Date.now() + 60000; // current time in seconds + 60 seconds
+        const expiration_timestamp = Date.now() + (TTL_TIME_IN_SECONDS * 1000); // current time in seconds + TTL_TIME_IN_SECONDS seconds
         console.log("[reserveSeats] Attempting to acquire locks for seats:", array);
 
         console.log("CALLING WATCH")
@@ -111,7 +113,6 @@ export class TicketService {
 
         const conflicting_seats: Seat[] = [];
         const accepted_seat_ids: string[] = [];
-
         for (let i = 0; i < return_value.length; i++) {
             if (return_value[i] === null || return_value[i]![0] !== null || return_value[i]![1] !== 'OK') {
                 console.log("[reserveSeats] Failed to acquire lock for key with index:", i, "Result:", return_value[i], "Seat ID:", seats[i]!.id);
@@ -121,6 +122,7 @@ export class TicketService {
                 accepted_seat_ids.push(array[i]!);
             }
         }
+
         if (conflicting_seats.length > 0) {
             console.log("[reserveSeats] Failed to acquire locks for all keys. Conflicting seat ids:", conflicting_seats.join(', '));
             if (accepted_seat_ids.length > 0) {
@@ -168,7 +170,8 @@ export class TicketService {
             signable_payload,
             "supe#$%#$rwdfas3423oi4uoq3iueoq3u4o2i3u4o23u4oq3iu4o2u3oupoiwaudiasduhfiasuhfi23u4hi23u4h2i3hri23uhdrsecret",
             {
-                expiresIn: 60
+                // expires in TTL_TIME_IN_SECONDS seconds
+                expiresIn: TTL_TIME_IN_SECONDS
             }
         );
 
