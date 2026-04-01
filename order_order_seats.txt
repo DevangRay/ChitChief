@@ -1,0 +1,41 @@
+// 1. Get Order from DB for user. If no pending order exists, create one.
+        console.log("[reserveSeats] Finding order connected to user:", user);
+        let pending_order = await this.prisma.order.findMany({
+            where: {
+                user_id: user,
+                order_status: 'PENDING'
+            }
+        });
+
+        if (pending_order.length === 0) {
+            console.log("[reserveSeats] No pending orders for user:", user, ". Creating new pending order.");
+            pending_order = [await this.prisma.order.create({
+                data: {
+                    user_id: user,
+                    order_status: 'PENDING',
+                    idempotency_key: crypto.randomUUID()
+                }
+            })];
+
+            console.log("[reserveSeats] Inserted order with id:", pending_order[0].id, "for user: ", user);
+        } else {
+            console.log("[reserveSeats] Pending order:", pending_order[0].id, "already exists for user: ", user);
+        }
+
+        // 3. Create OrderSeats for Order
+        console.log("[reserveSeats] Deleting existing OrderSeats for order with id:", pending_order[0].id);
+        const order_seats_delete_status = await this.prisma.orderSeats.deleteMany({
+            where: {
+                order_id: pending_order[0].id
+            }
+        });
+        console.log("[reserveSeats] Deleted", order_seats_delete_status.count, "OrderSeats for order with id:", pending_order[0].id);
+
+        const order_seats_create_status = await this.prisma.orderSeats.createMany({
+            data: seats.map((seat) => ({
+                order_id: pending_order[0].id,
+                seat_id: seat.id,
+                price_at_purchase: seat.price
+            }))
+        });
+        console.log("[reserveSeats] Created", order_seats_create_status.count, " OrderSeats for order with id:", pending_order[0].id);
