@@ -2,6 +2,7 @@ import { Seat, SeatStatus } from "@prisma/client"
 import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
 import { seatIdFromLock, seatLockKeyFormatter } from "../../lib/redis-keys";
+import 'dotenv/config';
 
 type SuccessfulReservation = {
     success: true,
@@ -21,8 +22,8 @@ type ReservationObject = SuccessfulReservation | FailedReservation
 TODO:
     * MOVE jwt.sign secret to PROCESS.ENV
     * Extract steps to helper functions
-    * seats param should just be IDs
-    * Should only return seat_ids
+        * seats param should just be IDs
+        * Should only return seat_ids
     * Add support for return code: 500/404/409
 */
 
@@ -232,7 +233,7 @@ export class TicketService {
         }
         const signed_token = jwt.sign(
             signable_payload,
-            "supe#$%#$rwdfas3423oi4uoq3iueoq3u4o2i3u4o23u4oq3iu4o2u3oupoiwaudiasduhfiasuhfi23u4hi23u4h2i3hri23uhdrsecret",
+            process.env.SIGNING_SECRET!,
             {
                 // expires in TTL_TIME_IN_SECONDS seconds
                 expiresIn: TTL_TIME_IN_SECONDS
