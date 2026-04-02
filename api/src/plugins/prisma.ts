@@ -16,7 +16,7 @@ declare module 'fastify' {
     }
 }
 
-async function prisma(fastify: FastifyInstance) {
+async function prismaPlugin(fastify: FastifyInstance) {
     const prisma = createPrismaClient(process.env.DATABASE_URL!);
     await prisma.$connect();
 
@@ -24,4 +24,4 @@ async function prisma(fastify: FastifyInstance) {
     fastify.addHook('onClose', async () => await prisma.$disconnect());
 }
 
-export default fp(prisma);
+export default fp(prismaPlugin);

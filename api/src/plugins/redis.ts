@@ -8,8 +8,13 @@ declare module 'fastify' {
     }
 }
 
-async function redis(fastify: FastifyInstance) {
-    const redis = new Redis({ host: 'localhost', port: 6379 });
+async function redisPlugin(fastify: FastifyInstance) {
+    const redis = new Redis({
+        host: 'localhost',
+        port: 6379,
+        maxRetriesPerRequest: null, // Required for BullMQ
+    },
+    );
 
     redis.on('error', (error) => {
         console.error('Redis connection error:', error);
@@ -19,4 +24,4 @@ async function redis(fastify: FastifyInstance) {
     fastify.addHook('onClose', async () => await redis.quit());
 }
 
-export default fp(redis);
+export default fp(redisPlugin);
