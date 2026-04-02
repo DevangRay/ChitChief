@@ -9,23 +9,27 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         try {
             const seats_array: Seat[] = [
                 {
-                    id: '4d17bf3c-248f-463c-8ae0-bc1de4ee519c',
-                    event_id: 'b4840051-8571-4391-be32-b94142db7c3c',
-                    row: 'A',
+                    id: "1aaff027-dd70-4932-a00f-b4f4afb4a36e",
+                    event_id: "50b4f4cf-77f1-4d75-a662-8ed9b58090d3",
+                    row: "A",
                     number: 1,
-                    price: 100,
-                    seat_status: 'AVAILABLE'
+                    price: 10000,
+                    seat_status: SeatStatus.AVAILABLE
                 },
                 {
-                    id: 'dbd63efe-19c5-4ff2-b0be-97e8b3ae1dc9',
-                    event_id: 'b4840051-8571-4391-be32-b94142db7c3c',
-                    row: 'A',
+                    id: "58ad014c-0bde-4c15-9c28-d202584937cd",
+                    event_id: "50b4f4cf-77f1-4d75-a662-8ed9b58090d3",
+                    row: "A",
                     number: 2,
-                    price: 200,
-                    seat_status: 'AVAILABLE'
+                    price: 10000,
+                    seat_status: SeatStatus.AVAILABLE
                 }
             ]
-            const result = await service.reserveSeats(seats_array, 'b661eea8-4717-4f93-9324-a571ef8adc73');
+
+            const seat_ids = seats_array.map(seat => seat.id);
+
+            // add retry jitter -> catch case where multiple requests come in at same time for same seats, and all get through redis lock check before locks are set
+            const result = await service.reserveSeats(seat_ids, '2d62c96e-0078-4653-98ba-595644b67b82');
             console.dir(result)
 
             if (result.success) {
