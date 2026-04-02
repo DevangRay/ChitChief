@@ -1,8 +1,8 @@
-import { Seat, SeatStatus } from "@prisma/client"
+import { PrismaClient, Seat, SeatStatus } from "@prisma/client"
 import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
 import { seatIdFromLock, seatLockKeyFormatter } from "../../lib/redis-keys";
-import 'dotenv/config';
+import Redis from "ioredis";
 
 type SuccessfulReservation = {
     success: true,
@@ -64,7 +64,7 @@ const REDIS_LOCK_LUA_SCRIPT = `
 export class TicketService {
     private readonly reservation_queue: Queue;
 
-    constructor(private readonly redis: any, private readonly prisma: any) {
+    constructor(private readonly redis: Redis, private readonly prisma: PrismaClient) {
         this.reservation_queue = new Queue('reservations', {
             connection: this.redis
         });
@@ -126,13 +126,13 @@ export class TicketService {
         const expiration_timestamp = Date.now() + (TTL_TIME_IN_SECONDS * 1000); // current time in seconds + TTL_TIME_IN_SECONDS seconds
         console.log("[reserveSeats] Attempting to acquire locks for seats:", array);
 
-        const lua_result = await this.redis.eval(
+        const lua_result: string[] = await this.redis.eval(
             REDIS_LOCK_LUA_SCRIPT,
             unique_seat_ids.length,
             ...array,
             user,
             String(expiration_timestamp)
-        );
+        ) as string[];
 
         if (lua_result[0] === 'CONFLICT') {
             console.log('[reserveSeats] Failed to acquire locks for all seats.');
@@ -144,57 +144,12 @@ export class TicketService {
             }
         }
 
-        // await this.redis.watch(array);
-        // let multi_chain = this.redis.multi();
-        // for (const key of array) {
-        //     multi_chain = multi_chain.set(key, user, 'NX', 'PXAT', expiration_timestamp);
-        // }
-        // const return_value: [Error | null, string | null][] = await multi_chain.exec();
-
         console.log("DEBUG: [reserveSeats] Checking current keys in Redis:");
         await this.redis.keys('*').then((keys: string[]) => {
             console.log('All keys:', keys);
         }).catch((err: any) => {
             console.error(err);
         });
-
-        // console.log("[reserveSeats] Return value from Redis EXEC command:", return_value);
-        // if (return_value === null) {
-        //     console.log("[reserveSeats] Watched key was externally modified between WATCH and EXEC. Returning failure.");
-        //     return {
-        //         success: false,
-        //         conflict_seat_ids: seats,
-        //     };
-        // }
-
-        // const conflicting_seats: Seat[] = [];
-        // const accepted_seat_ids: string[] = [];
-        // for (let i = 0; i < return_value.length; i++) {
-        //     if (return_value[i] === null || return_value[i]![0] !== null || return_value[i]![1] !== 'OK') {
-        //         console.log("[reserveSeats] Failed to acquire lock for key with index:", i, "Result:", return_value[i], "Seat ID:", seats[i]!.id);
-        //         conflicting_seats.push(seats[i]!);
-        //     } else {
-        //         console.log("[reserveSeats] Successfully acquired lock for key with index:", i, "and Seat ID:", seats[i]!.id);
-        //         accepted_seat_ids.push(array[i]!);
-        //     }
-        // }
-
-        // if (conflicting_seats.length > 0) {
-        //     console.log("[reserveSeats] Failed to acquire locks for all keys. Conflicting seat ids:", conflicting_seats.join(', '));
-        //     if (accepted_seat_ids.length > 0) {
-        //         console.log("[reserveSeats] Releasing locks for accepted seat ids:", accepted_seat_ids.join(', '));
-        //         await this.redis.del(accepted_seat_ids);
-        //     } else {
-        //         console.log("[reserveSeats] No locks were acquired, so no locks to release.");
-        //     }
-
-        //     return {
-        //         success: false,
-        //         conflict_seat_ids: conflicting_seats
-        //     }
-        // } else {
-        //     console.log("[reserveSeats] Successfully acquired locks for all keys.");
-        // }
 
         // 4. Update all seats to RESERVED in DB
         console.log("[reserveSeats] Updating seat statuses to RESERVED in database.");
