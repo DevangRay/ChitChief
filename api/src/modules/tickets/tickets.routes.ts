@@ -1,10 +1,9 @@
 import { FastifyInstance } from "fastify";
 import { TicketService } from "./tickets.service";
-import { Seat } from "@prisma/client";
-import * as jwt from 'jsonwebtoken';
+import { Seat, SeatStatus } from "@prisma/client";
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
-    const service = new TicketService(fastify.redis, fastify.prisma, jwt);
+    const service = new TicketService(fastify.redis, fastify.prisma);
 
     fastify.get('/reserve', async (request, reply) => {
         try {
