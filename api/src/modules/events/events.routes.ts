@@ -11,7 +11,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
             return reply.status(200).send(events);
         } catch (error) {
-            fastify.log.error({ error }, '[GET /events/] Failed to query events');
+            fastify.log.error(error, '[GET /events/] Failed to query events');
             return reply.status(500).send({ message: 'Internal server error.' });
         }
     }),
@@ -27,7 +27,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
                 return reply.status(200).send(event);
             } catch (error) {
-                fastify.log.error({ error }, '[GET /events/:id] Failed to query events for id:', id);
+                fastify.log.error(error, '[GET /events/:id] Failed to query events for id:', id);
                 return reply.status(500).send({ message: 'Internal server error.' });
             }
         }),
@@ -44,7 +44,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
                 return reply.status(200).send(event_seats);
             } catch (error) {
-                fastify.log.error({ error }, '[GET /events/:id/seats] Failed to query events for id:', id);
+                fastify.log.error(error, '[GET /events/:id/seats] Failed to query events for id:', id);
                 return reply.status(500).send({ message: 'Internal server error.' });
             }
         })

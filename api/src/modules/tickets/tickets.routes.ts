@@ -37,7 +37,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
         } catch (error) {
             console.log("error: " + error)
-            fastify.log.error({ error }, '[GET /reserve] Failed to reserve seats');
+            fastify.log.error(error, '[GET /reserve] Failed to reserve seats');
             return reply.status(500).send({ message: 'Internal server error.' });
         }
     })

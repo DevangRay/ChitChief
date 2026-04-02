@@ -17,12 +17,14 @@ services:
   #       condition: service_started
 
   # worker:
-  #   build: .
+  #   build:
+  #     context: ./api
+  #     dockerfile: Dockerfile
   #   command: node dist/worker.js
   #   environment:
-  #     - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ticketing
-  #     - REDIS_URL=redis://redis:6379
-  #     - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+  #     - DATABASE_URL=DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ticketing
+  #     - REDIS_URL=${REDIS_URL}
+  #     - STRIPE_SECRET_KEY=fake_stripe_key
   #   depends_on:
   #     - postgres
   #     - redis
@@ -51,6 +53,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command:
+      redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

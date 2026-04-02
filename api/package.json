@@ -13,6 +13,7 @@
     "test:unit": "vitest run --testPathPattern=unit",
     "test:integration": "vitest run --testPathPattern=integration",
     "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc",
     "start": "node dist/server.js"
   },
