@@ -9,7 +9,7 @@ export async function buildApp() {
     const app = Fastify({ logger: true });
 
     await app.register(prismaPlugin);
-    await app.register(redisPlugin, { closeClient: true });
+    await app.register(redisPlugin);
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
     // routes will be registered here later
