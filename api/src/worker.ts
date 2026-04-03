@@ -4,6 +4,7 @@ import IORedis from 'ioredis';
 import { SeatStatus } from '@prisma/client';
 import { seatLockFromId } from './lib/redis-keys';
 import 'dotenv/config';
+import { getDateForLogs } from './lib/date-formatter';
 
 console.log('[worker] Starting worker with environment variables:', process.env.DATABASE_URL, process.env.REDIS_URL);
 const connection = new IORedis(
@@ -17,7 +18,7 @@ const worker = new Worker(
     'reservations',
     async (job) => {
         if (job.name === 'expire_seat_reservation') {
-            console.log('[worker] Processing expire_seat_reservation job with data:', job.data);
+            console.log(`[worker: ${getDateForLogs()}] Processing expire_seat_reservation job with data:`, job.data);
             const { seat_ids } = job.data;
 
             // set seat_status back to AVAILABLE for all seat_ids in job data
@@ -42,14 +43,14 @@ const worker = new Worker(
             }
             await multi_chain.exec();
 
-            console.log(`[worker] Released locks and reset seat statuses for seat ids: ${seat_ids.join(', ')}`);
+            console.log(`[worker: ${getDateForLogs()}] Released locks and reset seat statuses for seat ids: ${seat_ids.join(', ')}`);
         }
     },
     { connection }
 );
 
 const shutdown = async () => {
-    console.log('[worker] Shutting down gracefully...')
+    console.log(`[worker: ${getDateForLogs()}] Shutting down gracefully...`)
     await worker.close()
     await prisma.$disconnect()
     await connection.quit()
@@ -59,10 +60,10 @@ const shutdown = async () => {
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
-worker.on('failed', (job, err) => {
-    console.error(`[worker] Job ${job?.id} failed with error: ${err.message}. Full error:`, err);
+worker.on('completed', (job) => {
+    console.log(`[worker: ${getDateForLogs()}] Job ${job.id} completed successfully`)
 })
 
-worker.on('completed', (job) => {
-    console.log(`[worker] Job ${job.id} completed successfully`)
+worker.on('failed', (job, err) => {
+    console.error(`[worker: ${getDateForLogs()}] Job ${job?.id} failed with error: ${err.message}. Full error:`, err);
 })

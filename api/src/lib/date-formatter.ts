@@ -1,0 +1,3 @@
+export function getDateForLogs() {
+    return `[${(new Date()).getMonth()}/${(new Date()).getDate()}/${(new Date()).getFullYear()}] ${(new Date()).getHours()}:${(new Date()).getMinutes()}:${(new Date()).getSeconds()} | [${(new Date()).getUTCMonth()}/${(new Date()).getUTCDate()}/${(new Date()).getUTCFullYear()}] ${(new Date()).getUTCHours()}:${(new Date()).getUTCMinutes()}:${(new Date()).getUTCSeconds()}`
+}
