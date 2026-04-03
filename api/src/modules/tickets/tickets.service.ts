@@ -1,8 +1,8 @@
 import { PrismaClient, Seat, SeatStatus } from "@prisma/client"
 import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
-import { seatIdFromLock, seatLockKeyFormatter } from "../../lib/redis-keys";
 import Redis from "ioredis";
+import { seatIdFromLock, seatLockKeyFormatter } from "../../lib/redis-keys";
 
 type SuccessfulReservation = {
     success: true,
@@ -20,10 +20,7 @@ type ReservationObject = SuccessfulReservation | FailedReservation
 
 /*
 TODO:
-    * MOVE jwt.sign secret to PROCESS.ENV
     * Extract steps to helper functions
-        * seats param should just be IDs
-        * Should only return seat_ids
     * Add support for return code: 500/404/409
 */
 
