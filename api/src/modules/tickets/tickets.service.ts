@@ -3,20 +3,15 @@ import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
 import Redis from "ioredis";
 import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
+import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
+import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 
-type SuccessfulReservation = {
+type ReservationObject = {
     success: true,
     reservation_token: string,
     expires_at: number,
     expires_at_string: string
 }
-
-type FailedReservation = {
-    success: false,
-    conflict_seat_ids: string[]
-}
-
-type ReservationObject = SuccessfulReservation | FailedReservation
 
 /*
 TODO:
@@ -72,26 +67,17 @@ export class TicketService {
         console.log("[reserveSeats] Validating seats and user parameters.");
         if (!seats || seats.length === 0 || seats.length > 10) {
             console.log("[reserveSeats] Invalid number of seats provided for reservation.");
-            return {
-                success: false,
-                conflict_seat_ids: []
-            };
+            throw new ResourceNotFoundError("Invalid number of seats provided.")
         }
         if (!user) {
             console.log("[reserveSeats] No user provided for reservation.");
-            return {
-                success: false,
-                conflict_seat_ids: []
-            };
+            throw new ResourceNotFoundError("No user provided.")
         }
 
         const unique_seat_ids = [...new Set(seats)];
         if (unique_seat_ids.length !== seats.length) {
-            console.log("[reserveSeats] Duplicate seat ids provided in reservation request.");
-            return {
-                success: false,
-                conflict_seat_ids: []
-            };
+            console.log("[reserveSeats] Duplicate Seat IDs provided in reservation request.");
+            throw new ResourceNotFoundError("Duplicate Seat IDs provided.")
         }
         console.log("[reserveSeats] Validation successful for seats and user.");
 
@@ -111,10 +97,8 @@ export class TicketService {
 
             const available_seat_ids = new Set(seat_statuses.map((s: Seat) => s.id));
             const unavailable_seats = seats.filter(seat => !available_seat_ids.has(seat));
-            return {
-                success: false,
-                conflict_seat_ids: unavailable_seats
-            }
+            
+            throw new SeatConflictError("Some seats are not available.", unavailable_seats);
         }
         console.log("[reserveSeats] Seats are available.")
 
@@ -135,10 +119,7 @@ export class TicketService {
             console.log('[reserveSeats] Failed to acquire locks for all seats.');
             const conflicting_seat_ids = lua_result.slice(1).map((key: string) => seatIdFromLock(key));
 
-            return {
-                success: false,
-                conflict_seat_ids: conflicting_seat_ids
-            }
+            throw new SeatConflictError("Some seats are not available.", conflicting_seat_ids);
         }
 
         console.log("DEBUG: [reserveSeats] Checking current keys in Redis:");

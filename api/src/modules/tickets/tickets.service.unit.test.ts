@@ -28,6 +28,8 @@ import { TicketService } from './tickets.service';
 import { SeatStatus } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import { seatLockFromId } from '../../lib/redis-keys';
+import SeatConflictError from '../../lib/custom_errors/SeatConflictError';
+import ResourceNotFoundError from '../../lib/custom_errors/ResourceNotFoundError';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -208,18 +210,14 @@ describe('TicketService.reserveSeats — behavior', () => {
             it('fails immediately with 0 seats (below minimum)', async () => {
                 const { service } = buildService({ seatIds: [] });
 
-                const result = await service.reserveSeats([], USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats([], USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
 
             it(`fails immediately with ${MAX_SEATS + 1} seats (above maximum)`, async () => {
                 const seatIds = makeSeatIds(MAX_SEATS + 1);
                 const { service } = buildService({ seatIds });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats([], USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
         });
 
@@ -228,44 +226,34 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const seatIds = makeSeatIds(2);
                 const { service } = buildService({ seatIds });
 
-                const result = await service.reserveSeats(seatIds, '');
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, '')).rejects.toThrow("No user provided.")
             });
 
             it('fails when user id is null', async () => {
                 const seatIds = makeSeatIds(2);
                 const { service } = buildService({ seatIds });
 
-                const result = await service.reserveSeats(seatIds, null as any);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, '')).rejects.toThrow("No user provided.")
             });
 
             it('fails when user id is undefined', async () => {
                 const seatIds = makeSeatIds(2);
                 const { service } = buildService({ seatIds });
 
-                const result = await service.reserveSeats(seatIds, undefined as any);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, undefined as any)).rejects.toThrow("No user provided.")
             });
 
             it('fails when the seat ids array contains duplicates', async () => {
                 const id = 'seat-uuid-1';
                 const { service } = buildService({ seatIds: [id] });
 
-                const result = await service.reserveSeats([id, id], USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats([id, id], USER_ID)).rejects.toThrow("Duplicate Seat IDs provided.")
             });
 
             it('fails when seat ids array is null', async () => {
                 const { service } = buildService();
 
-                const result = await service.reserveSeats(null as any, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(null as any, USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
         });
     });
@@ -294,9 +282,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                     unavailableSeatIds: seatIds,   // all unavailable
                 });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Some seats are not available.")
             });
         });
 
@@ -308,9 +294,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                     unavailableSeatIds: [seatIds[2]],  // last one is unavailable
                 });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Some seats are not available.")
             });
 
             it('reports the unavailable seat ids in the failure response', async () => {
@@ -318,11 +302,11 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const unavailableSeatIds = [seatIds[1]]; // middle seat
                 const { service } = buildService({ seatIds, unavailableSeatIds });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toContain(unavailableSeatIds[0]);
+                try {
+                    await service.reserveSeats(seatIds, USER_ID);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                    expect((error as SeatConflictError).conflict_seat_ids).toEqual(unavailableSeatIds);
                 }
             });
 
@@ -332,9 +316,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const { service } = buildService({ seatIds: realIds });
 
                 // The ghost id is not in DB, so findMany returns only the real ones.
-                const result = await service.reserveSeats([...realIds, ghostId], USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats([...realIds, ghostId], USER_ID)).rejects.toThrow("Some seats are not available.")
             });
         });
 
@@ -371,9 +353,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const conflictingKeys = seatIds.map(id => seatLockFromId(id));
                 const { service } = buildService({ seatIds, lockResult: conflictingKeys });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Some seats are not available.")
             });
         });
 
@@ -384,9 +364,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const conflictingKeys = [seatLockFromId(seatIds[1])];
                 const { service } = buildService({ seatIds, lockResult: conflictingKeys });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Some seats are not available.")
             });
 
             it('includes the conflicting seat id in the failure response', async () => {
@@ -397,11 +375,11 @@ describe('TicketService.reserveSeats — behavior', () => {
                     lockResult: [seatLockFromId(contestedSeatId)],
                 });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toContain(contestedSeatId);
+                try {
+                    await service.reserveSeats(seatIds, USER_ID);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                    expect((error as SeatConflictError).conflict_seat_ids).toEqual([contestedSeatId]);
                 }
             });
 
@@ -413,11 +391,11 @@ describe('TicketService.reserveSeats — behavior', () => {
                     lockResult: [seatLockFromId(seatIds[0])], // only first conflicts
                 });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).not.toContain(freeSeatId);
+                try {
+                    await service.reserveSeats(seatIds, USER_ID);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                    expect((error as SeatConflictError).conflict_seat_ids).not.toContain(freeSeatId);
                 }
             });
         });
@@ -626,9 +604,7 @@ describe('TicketService.reserveSeats — behavior', () => {
             it('returns success:false when input validation fails', async () => {
                 const { service } = buildService();
 
-                const result = await service.reserveSeats([], USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats([], USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
 
             it('returns success:false when seats are unavailable in the DB', async () => {
@@ -638,9 +614,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                     unavailableSeatIds: seatIds,
                 });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Some seats are not available.")
             });
 
             it('returns success:false when Redis locking detects a conflict', async () => {
@@ -650,19 +624,16 @@ describe('TicketService.reserveSeats — behavior', () => {
                     lockResult: seatIds.map(id => seatLockFromId(id)),
                 });
 
-                const result = await service.reserveSeats(seatIds, USER_ID);
-
-                expect(result.success).toBe(false);
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Some seats are not available.")
             });
 
-            it('includes a conflict_seat_ids array in every failure response', async () => {
+            it('specifies ResourceNotFoundError failure response', async () => {
                 const { service } = buildService();
 
-                const result = await service.reserveSeats([], USER_ID);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(Array.isArray(result.conflict_seat_ids)).toBe(true);
+                try {
+                    await service.reserveSeats([], USER_ID);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
                 }
             });
         });
@@ -671,12 +642,10 @@ describe('TicketService.reserveSeats — behavior', () => {
             it('conflict_seat_ids is empty when the failure is due to invalid input (not a seat conflict)', async () => {
                 const { service } = buildService();
 
-                // Empty array is an input validation failure, not a seat conflict.
-                const result = await service.reserveSeats([], USER_ID);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toHaveLength(0);
+                try {
+                    await service.reserveSeats([], USER_ID);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
                 }
             });
         });
