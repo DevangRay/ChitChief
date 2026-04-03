@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import { createPrismaClient } from './lib/prisma-factory';
 import IORedis from 'ioredis';
 import { SeatStatus } from '@prisma/client';
-import { seatLockKeyFormatter } from './lib/redis-keys';
+import { seatLockFromId } from './lib/redis-keys';
 import 'dotenv/config';
 
 console.log('[worker] Starting worker with environment variables:', process.env.DATABASE_URL, process.env.REDIS_URL);
@@ -34,7 +34,7 @@ const worker = new Worker(
             })
 
             // delete redis locks for all seat_ids in job data
-            const lock_keys = seat_ids.map((id: string) => seatLockKeyFormatter(id));
+            const lock_keys = seat_ids.map((id: string) => seatLockFromId(id));
             // using pipeline instead of multi since we don't need atomicity. Will increase performance, and expiry is already set for keys
             let multi_chain = connection.pipeline();
             for (const key of lock_keys) {
@@ -48,6 +48,21 @@ const worker = new Worker(
     { connection }
 );
 
+const shutdown = async () => {
+    console.log('[worker] Shutting down gracefully...')
+    await worker.close()
+    await prisma.$disconnect()
+    await connection.quit()
+    process.exit(0)
+}
+
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
+
 worker.on('failed', (job, err) => {
     console.error(`[worker] Job ${job?.id} failed with error: ${err.message}. Full error:`, err);
+})
+
+worker.on('completed', (job) => {
+    console.log(`[worker] Job ${job.id} completed successfully`)
 })

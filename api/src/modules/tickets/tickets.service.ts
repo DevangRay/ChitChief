@@ -2,7 +2,7 @@ import { PrismaClient, Seat, SeatStatus } from "@prisma/client"
 import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
 import Redis from "ioredis";
-import { seatIdFromLock, seatLockKeyFormatter } from "../../lib/redis-keys";
+import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
 
 type SuccessfulReservation = {
     success: true,
@@ -70,7 +70,7 @@ export class TicketService {
     async reserveSeats(seats: string[], user: string): Promise<ReservationObject> {
         // 1. Validate seats and user
         console.log("[reserveSeats] Validating seats and user parameters.");
-        if (seats.length === 0 || seats.length > 10) {
+        if (!seats || seats.length === 0 || seats.length > 10) {
             console.log("[reserveSeats] Invalid number of seats provided for reservation.");
             return {
                 success: false,
@@ -119,7 +119,7 @@ export class TicketService {
         console.log("[reserveSeats] Seats are available.")
 
         // 3. Attempt to acquire locks for all seats. If any lock fails, release all locks and return failure response with conflicting seat ids.
-        const array = Array.from(unique_seat_ids).map((id) => seatLockKeyFormatter(id));
+        const array = Array.from(unique_seat_ids).map((id) => seatLockFromId(id));
         const expiration_timestamp = Date.now() + (TTL_TIME_IN_SECONDS * 1000); // current time in seconds + TTL_TIME_IN_SECONDS seconds
         console.log("[reserveSeats] Attempting to acquire locks for seats:", array);
 
