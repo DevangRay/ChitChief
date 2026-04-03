@@ -27,7 +27,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
 import { SeatStatus } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
-import { seatLockKeyFormatter } from '../../lib/redis-keys';
+import { seatLockFromId } from '../../lib/redis-keys';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -368,7 +368,7 @@ describe('TicketService.reserveSeats — behavior', () => {
             it('fails when all seats are already locked by another user', async () => {
                 const seatIds = makeSeatIds(2);
                 // Simulate all lock keys being contested (format mirrors the service key formatter)
-                const conflictingKeys = seatIds.map(id => seatLockKeyFormatter(id));
+                const conflictingKeys = seatIds.map(id => seatLockFromId(id));
                 const { service } = buildService({ seatIds, lockResult: conflictingKeys });
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
@@ -381,7 +381,7 @@ describe('TicketService.reserveSeats — behavior', () => {
             it('fails when at least one of several seats is locked', async () => {
                 const seatIds = makeSeatIds(3);
                 // Only the second seat is contested.
-                const conflictingKeys = [seatLockKeyFormatter(seatIds[1])];
+                const conflictingKeys = [seatLockFromId(seatIds[1])];
                 const { service } = buildService({ seatIds, lockResult: conflictingKeys });
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
@@ -394,7 +394,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const contestedSeatId = seatIds[0];
                 const { service } = buildService({
                     seatIds,
-                    lockResult: [seatLockKeyFormatter(contestedSeatId)],
+                    lockResult: [seatLockFromId(contestedSeatId)],
                 });
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
@@ -410,7 +410,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const freeSeatId = seatIds[1];
                 const { service } = buildService({
                     seatIds,
-                    lockResult: [seatLockKeyFormatter(seatIds[0])], // only first conflicts
+                    lockResult: [seatLockFromId(seatIds[0])], // only first conflicts
                 });
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
@@ -647,7 +647,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const seatIds = makeSeatIds(2);
                 const { service } = buildService({
                     seatIds,
-                    lockResult: seatIds.map(id => seatLockKeyFormatter(id)),
+                    lockResult: seatIds.map(id => seatLockFromId(id)),
                 });
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
