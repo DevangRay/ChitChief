@@ -20,7 +20,7 @@ TODO:
 */
 
 
-const TTL_TIME_IN_SECONDS = 10;
+const TTL_TIME_IN_SECONDS = 60;
 
 // Can improve performance with SCRIPT LOAD and using EVALSHA
 const REDIS_LOCK_LUA_SCRIPT = `

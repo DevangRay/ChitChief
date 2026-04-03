@@ -37,13 +37,15 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
         } catch (error) {
             console.log("error: " + error)
-            fastify.log.error(error, '[GET /reserve] Failed to reserve seats');
 
             if (error instanceof SeatConflictError) {
+                console.log("[tickets.routes]: Caught 409 Error")
                 return reply.status(409).send({ message: error.message, conflict_seat_ids: error.conflict_seat_ids });
             } else if (error instanceof ResourceNotFoundError) {
+                console.log("[tickets.routes]: Caught 404 Error")
                 return reply.status(404).send({ message: error.message });
             } else {
+                fastify.log.error(error, '[GET /reserve] Failed to reserve seats');
                 return reply.status(500).send({ message: 'Internal server error.' });
             }
         }
