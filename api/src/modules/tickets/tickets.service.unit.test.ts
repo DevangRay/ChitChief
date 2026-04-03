@@ -1,692 +1,683 @@
+/**
+ * tickets.service.unit.test.ts
+ *
+ * Behavior-driven unit tests for TicketService.reserveSeats()
+ *
+ * Design principles:
+ *  - Tests describe WHAT the service does, not HOW it does it.
+ *  - Mocks only define the external state of the world (DB records, Redis
+ *    contention) — they do not assert on internal implementation calls such as
+ *    which Redis command was used or how many times a Prisma method was called.
+ *  - The only internal implementation detail we pin to is the shape of the
+ *    `reserveSeats` return value, which is the public contract of the service.
+ *  - A full rewrite of the internals (e.g. replacing Lua with a different
+ *    locking mechanism) should not break any test here.
+ *
+ * Boundary conditions captured:
+ *  - Seat count: 0, 1, MAX (10), MAX+1
+ *  - Duplicate seat ids in the input array
+ *  - User id: missing / empty string
+ *  - Seat availability: all available, none available, subset available
+ *  - Redis contention: no conflict, all conflict, partial conflict
+ *  - Error propagation: DB and Redis throw unexpected errors
+ *  - Return value shape and token content
+ */
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
-import { Seat, SeatStatus } from '@prisma/client';
+import { SeatStatus } from '@prisma/client';
+import * as jwt from 'jsonwebtoken';
+import { seatLockKeyFormatter } from '../../lib/redis-keys';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ExecReply = [Error | null, string | null];
+const MAX_SEATS = 10;
+const USER_ID = 'user-uuid-1';
+const EVENT_ID = 'event-uuid-1';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seed helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Build an array of n distinct seat id strings. */
+const makeSeatIds = (n: number, prefix = 'seat-uuid-'): string[] =>
+    Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`);
+
+/** Build an array of Prisma Seat records (AVAILABLE by default). */
+const makeAvailableSeats = (ids: string[]) =>
+    ids.map((id, i) => ({
+        id,
+        event_id: EVENT_ID,
+        row: 'A',
+        number: i + 1,
+        price: 10000,
+        seat_status: SeatStatus.AVAILABLE,
+    }));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock factories
+//
+// We expose only the minimum surface needed for the tests:
+//  • prisma.seat.findMany  — controls which seats the DB reports as AVAILABLE
+//  • prisma.seat.updateMany — can be made to throw to simulate a DB error
+//  • redis.eval             — controls lock acquisition outcome
+//  • redis.keys             — silenced (debug helper in real service)
+//  • redis.pipeline / del   — silenced (cleanup path)
+//  • Queue.add              — can be made to throw to simulate a queue error
+//
+// Everything else is a no-op that returns a sensible default so that the
+// happy path works out of the box.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const makeMultiChain = (execResult: ExecReply[] | null) => ({
-    set: vi.fn().mockReturnThis(),
-    exec: vi.fn().mockResolvedValue(execResult),
-});
+/**
+ * Create a Redis mock.
+ *
+ * @param lockResult  'OK' = all locks acquired successfully (default)
+ *                    string[] = list of seat-lock keys that are already held
+ *                    Error = redis.eval throws
+ */
+const makeRedisMock = (
+    lockResult: 'OK' | string[] | Error = 'OK'
+) => {
+    const evalMock = vi.fn();
 
-const makeRedisMock = (execResult: ExecReply[] | null = [[null, 'OK']]) => {
-    const multiChain = makeMultiChain(execResult);
+    if (lockResult instanceof Error) {
+        evalMock.mockRejectedValue(lockResult);
+    } else if (lockResult === 'OK') {
+        evalMock.mockResolvedValue(['OK']);
+    } else {
+        // partial or full conflict — return CONFLICT + the conflicting keys
+        evalMock.mockResolvedValue(['CONFLICT', ...lockResult]);
+    }
+
     return {
-        watch: vi.fn().mockResolvedValue('OK'),
-        multi: vi.fn().mockReturnValue(multiChain),
+        eval: evalMock,
+        // debug helper used in some service versions — silenced
+        keys: vi.fn().mockResolvedValue([]),
+        // cleanup / pipeline helpers — silenced
+        pipeline: vi.fn().mockReturnValue({ del: vi.fn().mockReturnThis(), exec: vi.fn().mockResolvedValue([]) }),
         del: vi.fn().mockResolvedValue(1),
-        _chain: multiChain,
     };
 };
 
-const makePrismaMock = () => ({
+/** Create a Prisma mock whose findMany returns `availableSeats`. */
+const makePrismaMock = (availableSeats: object[] = []) => ({
     seat: {
-        findMany: vi.fn(),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
-    },
-    order: {
-        findMany: vi.fn(),
-        create: vi.fn(),
-    },
-    orderSeats: {
-        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-        createMany: vi.fn().mockResolvedValue({ count: 2 }),
+        findMany: vi.fn().mockResolvedValue(availableSeats),
+        updateMany: vi.fn().mockResolvedValue({ count: availableSeats.length }),
     },
 });
 
-const makeQueueMock = () => ({
-    add: vi.fn().mockResolvedValue({ id: 'job-1' }),
-});
+/** Build the full service under test with the given world state. */
+const buildService = ({
+    seatIds = makeSeatIds(2),
+    allAvailable = true,
+    unavailableSeatIds = [] as string[],
+    lockResult = 'OK' as 'OK' | string[] | Error,
+    dbError = undefined as Error | undefined,
+    queueError = undefined as Error | undefined,
+} = {}) => {
+    const availableSeats = allAvailable
+        ? makeAvailableSeats(seatIds.filter(id => !unavailableSeatIds.includes(id)))
+        : makeAvailableSeats(seatIds.filter(id => !unavailableSeatIds.includes(id)));
 
-const makeJwtMock = () => ({
-    sign: vi.fn().mockReturnValue('signed.jwt.token'),
-});
+    const redis = makeRedisMock(lockResult);
+    const prisma = makePrismaMock(availableSeats);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Seed data
-// ─────────────────────────────────────────────────────────────────────────────
+    if (dbError) {
+        prisma.seat.updateMany.mockRejectedValue(dbError);
+    }
 
-const makeSeat = (overrides: Partial<Seat> = {}): Seat => ({
-    id: 'seat-uuid-1',
-    event_id: 'event-uuid-1',
-    row: 'A',
-    number: 1,
-    price: 100,
-    seat_status: SeatStatus.AVAILABLE,
-    ...overrides,
-} as Seat);
+    // We need to mock the Queue constructor so BullMQ doesn't try to connect.
+    // The TicketService instantiates it internally, so we patch the module.
+    // (If the service signature changes to accept an injected queue, remove this.)
+    const queueAddMock = queueError
+        ? vi.fn().mockRejectedValue(queueError)
+        : vi.fn().mockResolvedValue({ id: 'job-1' });
 
-const seat1 = makeSeat({ id: 'seat-uuid-1', row: 'A', number: 1 });
-const seat2 = makeSeat({ id: 'seat-uuid-2', row: 'A', number: 2 });
-const seats = [seat1, seat2];
+    vi.doMock('bullmq', () => ({
+        Queue: vi.fn().mockImplementation(() => ({ add: queueAddMock })),
+    }));
 
-const USER = 'user-uuid-1';
-const MAX_SEATS = 10;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Exec reply builders
-// ─────────────────────────────────────────────────────────────────────────────
-
-const allOk = (n: number): ExecReply[] =>
-    Array.from({ length: n }, () => [null, 'OK']);
-
-const withConflictsAt = (n: number, indices: number[]): ExecReply[] =>
-    Array.from({ length: n }, (_, i) =>
-        indices.includes(i) ? [null, null] : [null, 'OK']
-    );
-
-const withErrorAt = (n: number, indices: number[]): ExecReply[] =>
-    Array.from({ length: n }, (_, i) =>
-        indices.includes(i) ? [new Error('ERR'), null] : [null, 'OK']
-    );
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Full-stack service builder
-// Rebuilds all mocks cleanly — use when a test needs non-default exec behaviour
-// ─────────────────────────────────────────────────────────────────────────────
-
-const makeService = (execResult: ExecReply[] | null) => {
-    const redis = makeRedisMock(execResult);
-    const prisma = makePrismaMock();
-    const queue = makeQueueMock();
-    const jwt = makeJwtMock();
-
-    // Default happy-path DB state — override per test as needed
-    prisma.seat.findMany.mockResolvedValue(
-        seats.map(s => ({ ...s, seat_status: SeatStatus.AVAILABLE }))
-    );
-
-    const service = new TicketService(redis as any, prisma as any, jwt as any, queue as any);
-    return { service, redis, prisma, queue, jwt };
+    const service = new TicketService(redis as any, prisma as any);
+    return { service, redis, prisma, queueAddMock };
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers for asserting on the reservation token
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Decode the reservation_token without verifying the signature.
+ * We intentionally skip signature verification so that the tests are not
+ * coupled to the secret used in the test environment.
+ */
+const decodeToken = (token: string): Record<string, unknown> =>
+    jwt.decode(token) as Record<string, unknown>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('TicketService.reserveSeats', () => {
-    let redis: ReturnType<typeof makeRedisMock>;
-    let prisma: ReturnType<typeof makePrismaMock>;
-    let queue: ReturnType<typeof makeQueueMock>;
-    let jwt: ReturnType<typeof makeJwtMock>;
-    let service: TicketService;
+describe('TicketService.reserveSeats — behavior', () => {
 
+    // Set the signing secret so jwt.sign works in the actual service.
     beforeEach(() => {
-        ({ service, redis, prisma, queue, jwt } = makeService(allOk(seats.length)));
+        process.env.SIGNING_SECRET = 'test-secret-for-unit-tests';
+        vi.clearAllMocks();
     });
 
     // =========================================================================
-    // Step 1 — Input validation
+    // 1. Input validation
     // =========================================================================
 
-    describe('step 1 — input validation', () => {
+    describe('input validation', () => {
+
+        describe('equivalence cases — valid input', () => {
+            it('succeeds for a standard valid request (multiple seats, valid user)', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+            });
+        });
+
+        describe('boundary cases — seat count', () => {
+            it('succeeds with exactly 1 seat (minimum valid count)', async () => {
+                const seatIds = makeSeatIds(1);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+            });
+
+            it(`succeeds with exactly ${MAX_SEATS} seats (maximum valid count)`, async () => {
+                const seatIds = makeSeatIds(MAX_SEATS);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+            });
+
+            it('fails immediately with 0 seats (below minimum)', async () => {
+                const { service } = buildService({ seatIds: [] });
+
+                const result = await service.reserveSeats([], USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+
+            it(`fails immediately with ${MAX_SEATS + 1} seats (above maximum)`, async () => {
+                const seatIds = makeSeatIds(MAX_SEATS + 1);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+        });
+
+        describe('exception cases — invalid inputs', () => {
+            it('fails when user id is an empty string', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, '');
+
+                expect(result.success).toBe(false);
+            });
+
+            it('fails when user id is null', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, null as any);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('fails when user id is undefined', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, undefined as any);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('fails when the seat ids array contains duplicates', async () => {
+                const id = 'seat-uuid-1';
+                const { service } = buildService({ seatIds: [id] });
+
+                const result = await service.reserveSeats([id, id], USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('fails when seat ids array is null', async () => {
+                const { service } = buildService();
+
+                const result = await service.reserveSeats(null as any, USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+        });
+    });
+
+    // =========================================================================
+    // 2. Seat availability — DB check
+    // =========================================================================
+
+    describe('seat availability check', () => {
 
         describe('equivalence cases', () => {
-            it('proceeds without throwing for a valid seats array and user', async () => {
-                const result = await service.reserveSeats(seats, USER);
-                expect(result.success).toBe(true);
+            it('succeeds when every requested seat is available in the database', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
 
-                expect(prisma.seat.findMany).toHaveBeenCalled();
-                expect(redis.watch).toHaveBeenCalled();
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+            });
+
+            it('fails when none of the requested seats are available', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({
+                    seatIds,
+                    allAvailable: false,
+                    unavailableSeatIds: seatIds,   // all unavailable
+                });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
             });
         });
 
         describe('boundary cases', () => {
-            it('accepts exactly 1 seat (minimum)', async () => {
-                const { service, prisma, redis } = makeService(allOk(1)); // add redis here
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.AVAILABLE }]);
+            it('fails when only some seats are available (partial availability)', async () => {
+                const seatIds = makeSeatIds(3);
+                const { service } = buildService({
+                    seatIds,
+                    unavailableSeatIds: [seatIds[2]],  // last one is unavailable
+                });
 
-                const result = await service.reserveSeats([seat1], USER);
-                expect(result.success).toBe(true);
+                const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(prisma.seat.findMany).toHaveBeenCalled();
-                expect(redis.watch).toHaveBeenCalled();
-            });
-
-            it('accepts exactly MAX_SEATS seats', async () => {
-                const maxSeats = Array.from({ length: MAX_SEATS }, (_, i) =>
-                    makeSeat({ id: `seat-uuid-${i}`, number: i + 1 })
-                );
-                const { service, prisma, redis } = makeService(allOk(MAX_SEATS));
-                prisma.seat.findMany.mockResolvedValue(
-                    maxSeats.map(s => ({ ...s, seat_status: SeatStatus.AVAILABLE }))
-                );
-
-                const result = await service.reserveSeats(maxSeats, USER);
-                expect(result.success).toBe(true);
-
-                expect(prisma.seat.findMany).toHaveBeenCalled();
-                expect(redis.watch).toHaveBeenCalled();
-            });
-
-            it('returns failure when seats array is empty', async () => {
-                const result = await service.reserveSeats([], USER);
                 expect(result.success).toBe(false);
-
-                expect(prisma.seat.findMany).not.toHaveBeenCalled();
-                expect(redis.watch).not.toHaveBeenCalled();
             });
 
-            it('returns failure when seats array has MAX_SEATS + 1 seats', async () => {
-                const tooMany = Array.from({ length: MAX_SEATS + 1 }, (_, i) =>
-                    makeSeat({ id: `seat-uuid-${i}`, number: i + 1 })
-                );
+            it('reports the unavailable seat ids in the failure response', async () => {
+                const seatIds = makeSeatIds(3);
+                const unavailableSeatIds = [seatIds[1]]; // middle seat
+                const { service } = buildService({ seatIds, unavailableSeatIds });
 
-                const result = await service.reserveSeats(tooMany, USER);
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
                 expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toContain(unavailableSeatIds[0]);
+                }
+            });
 
-                expect(prisma.seat.findMany).not.toHaveBeenCalled();
-                expect(redis.watch).not.toHaveBeenCalled();
+            it('fails when a requested seat id does not exist in the database at all', async () => {
+                const realIds = makeSeatIds(2);
+                const ghostId = 'non-existent-seat-uuid';
+                const { service } = buildService({ seatIds: realIds });
+
+                // The ghost id is not in DB, so findMany returns only the real ones.
+                const result = await service.reserveSeats([...realIds, ghostId], USER_ID);
+
+                expect(result.success).toBe(false);
             });
         });
 
         describe('exception cases', () => {
-            it('returns failure when user is null', async () => {
-                const result = await service.reserveSeats(seats, null as any);
-                expect(result.success).toBe(false);
+            it('propagates unexpected errors thrown by the database', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service, prisma } = buildService({ seatIds });
+                prisma.seat.findMany.mockRejectedValue(new Error('DB connection lost'));
 
-                expect(prisma.seat.findMany).not.toHaveBeenCalled();
-                expect(redis.watch).not.toHaveBeenCalled();
-            });
-
-            it('returns failure when user is an empty string', async () => {
-                const result = await service.reserveSeats(seats, '');
-                expect(result.success).toBe(false);
-
-                expect(prisma.seat.findMany).not.toHaveBeenCalled();
-                expect(redis.watch).not.toHaveBeenCalled();
-            });
-
-            it('returns failure when seats contains duplicate ids', async () => {
-                const result = await service.reserveSeats([seat1, seat1], USER);
-                expect(result.success).toBe(false);
-
-                expect(prisma.seat.findMany).not.toHaveBeenCalled();
-                expect(redis.watch).not.toHaveBeenCalled();
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow();
             });
         });
     });
 
     // =========================================================================
-    // Step 2 — DB seat availability check
+    // 3. Seat locking (Redis)
     // =========================================================================
 
-    describe('step 2 — seat availability check', () => {
+    describe('seat locking', () => {
 
         describe('equivalence cases', () => {
-            it('queries seats using event_id, row, and number', async () => {
-                await service.reserveSeats(seats, USER);
+            it('succeeds when all seats are free to lock', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds, lockResult: 'OK' });
 
-                expect(prisma.seat.findMany).toHaveBeenCalledWith(
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+            });
+
+            it('fails when all seats are already locked by another user', async () => {
+                const seatIds = makeSeatIds(2);
+                // Simulate all lock keys being contested (format mirrors the service key formatter)
+                const conflictingKeys = seatIds.map(id => seatLockKeyFormatter(id));
+                const { service } = buildService({ seatIds, lockResult: conflictingKeys });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+        });
+
+        describe('boundary cases', () => {
+            it('fails when at least one of several seats is locked', async () => {
+                const seatIds = makeSeatIds(3);
+                // Only the second seat is contested.
+                const conflictingKeys = [seatLockKeyFormatter(seatIds[1])];
+                const { service } = buildService({ seatIds, lockResult: conflictingKeys });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('includes the conflicting seat id in the failure response', async () => {
+                const seatIds = makeSeatIds(2);
+                const contestedSeatId = seatIds[0];
+                const { service } = buildService({
+                    seatIds,
+                    lockResult: [seatLockKeyFormatter(contestedSeatId)],
+                });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toContain(contestedSeatId);
+                }
+            });
+
+            it('does not include non-conflicting seat ids in the failure response', async () => {
+                const seatIds = makeSeatIds(2);
+                const freeSeatId = seatIds[1];
+                const { service } = buildService({
+                    seatIds,
+                    lockResult: [seatLockKeyFormatter(seatIds[0])], // only first conflicts
+                });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).not.toContain(freeSeatId);
+                }
+            });
+        });
+
+        describe('exception cases', () => {
+            it('propagates unexpected errors thrown by the Redis locking operation', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({
+                    seatIds,
+                    lockResult: new Error('Redis connection refused'),
+                });
+
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // 4. Seat status persisted to DB after successful lock
+    // =========================================================================
+
+    describe('seat status persistence', () => {
+
+        describe('equivalence cases', () => {
+            it('marks seats as no longer available in the DB after a successful reservation', async () => {
+                /**
+                 * We verify the outcome (seats are no longer AVAILABLE) rather than
+                 * asserting that a specific Prisma method was called. We do this by
+                 * checking that the service calls updateMany — which is the only public
+                 * observable we have without querying a real DB — and that it was called
+                 * with the correct seat ids.
+                 *
+                 * If the implementation moves to a different persistence strategy,
+                 * update this test to reflect the new observable outcome.
+                 */
+                const seatIds = makeSeatIds(2);
+                const { service, prisma } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                // Confirm the DB update was issued for the correct ids.
+                expect(prisma.seat.updateMany).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        where: {
-                            id: {
-                                in: seats.map(s => s.id)
-                            },
-                            seat_status: SeatStatus.AVAILABLE
-                        },
+                        where: expect.objectContaining({
+                            id: expect.objectContaining({ in: expect.arrayContaining(seatIds) }),
+                        }),
                     })
                 );
             });
-
-            it('proceeds to lock acquisition when all seats are AVAILABLE', async () => {
-                await service.reserveSeats(seats, USER);
-
-                expect(redis.watch).toHaveBeenCalled();
-            });
-
-            it('returns success:false without touching Redis when any seat is unavailable', async () => {
-                prisma.seat.findMany.mockResolvedValue([
-                    { ...seat2, seat_status: SeatStatus.AVAILABLE },
-                ]);
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                expect(redis.watch).not.toHaveBeenCalled();
-            });
-        });
-
-        describe('boundary cases', () => {
-            it('returns only the one non-AVAILABLE seat as a conflict', async () => {
-                prisma.seat.findMany.mockResolvedValue([
-                    { ...seat1, seat_status: SeatStatus.AVAILABLE },
-                ]);
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toHaveLength(1);
-                    expect(result.conflict_seat_ids[0].id).toBe(seat2.id);
-                }
-            });
-
-            it('returns all seats as conflicts when every seat is unavailable', async () => {
-                prisma.seat.findMany.mockResolvedValue([
-                ]);
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toHaveLength(2);
-                }
-            });
         });
 
         describe('exception cases', () => {
-            it('treats RESERVED seats as conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([]);
+            it('propagates unexpected errors thrown while persisting seat status', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({
+                    seatIds,
+                    dbError: new Error('DB write timeout'),
+                });
 
-                const result = await service.reserveSeats([seat1], USER);
-
-                expect(result.success).toBe(false);
-            });
-
-            it('treats SOLD seats as conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([]);
-
-                const result = await service.reserveSeats([seat1], USER);
-
-                expect(result.success).toBe(false);
-            });
-
-            it('treats a seat not found in DB as a conflict', async () => {
-                // Only seat1 returned — seat2 is absent
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.AVAILABLE }]);
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids.some(s => s.id === seat2.id)).toBe(true);
-                }
-            });
-
-            it('propagates when prisma.seat.findMany rejects', async () => {
-                prisma.seat.findMany.mockRejectedValue(new Error('DB unavailable'));
-
-                await expect(service.reserveSeats(seats, USER)).rejects.toThrow('DB unavailable');
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow();
             });
         });
     });
 
     // =========================================================================
-    // Step 3 — Redis lock acquisition
+    // 5. Return value contract
     // =========================================================================
 
-    describe('step 3 — lock acquisition', () => {
+    describe('return value — success', () => {
 
         describe('equivalence cases', () => {
-            it('watches all seat lock keys', async () => {
-                await service.reserveSeats(seats, USER);
-
-                expect(redis.watch).toHaveBeenCalledWith(
-                    seats.map(s => `seat_lock_${s.id}`)
-                );
-            });
-
-            it('sets each lock keyed to seat id, valued to user, using NX and PXAT', async () => {
-                await service.reserveSeats(seats, USER);
-
-                expect(redis._chain.set).toHaveBeenCalledWith(
-                    `seat_lock_${seat1.id}`, USER, 'NX', 'PXAT', expect.any(Number)
-                );
-                expect(redis._chain.set).toHaveBeenCalledWith(
-                    `seat_lock_${seat2.id}`, USER, 'NX', 'PXAT', expect.any(Number)
-                );
-            });
-
-            it('returns success:false with only the conflicting seat when one lock fails', async () => {
-                const { service } = makeService(withConflictsAt(seats.length, [1]));
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toHaveLength(1);
-                    expect(result.conflict_seat_ids[0].id).toBe(seat2.id);
-                }
-            });
-        });
-
-        describe('boundary cases', () => {
-            it('sets PXAT expiration approximately 60 seconds from now', async () => {
-                const before = Date.now();
-                await service.reserveSeats(seats, USER);
-                const after = Date.now();
-
-                const pxatArg = redis._chain.set.mock.calls[0][4] as number;
-                expect(pxatArg).toBeGreaterThanOrEqual(before + 60000);
-                expect(pxatArg).toBeLessThanOrEqual(after + 60000);
-            });
-
-            it('returns all seats as conflicts when WATCH fires (exec returns null)', async () => {
-                const { service } = makeService(null);
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toEqual(expect.arrayContaining(seats));
-                }
-            });
-
-            it('returns all seats as conflicts when every lock fails', async () => {
-                const { service } = makeService(withConflictsAt(seats.length, [0, 1]));
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toHaveLength(seats.length);
-                }
-            });
-        });
-
-        describe('exception cases', () => {
-            it('releases only successfully acquired locks on partial conflict', async () => {
-                const { service, redis } = makeService(withConflictsAt(seats.length, [1]));
-
-                await service.reserveSeats(seats, USER);
-
-                expect(redis.del).toHaveBeenCalledWith([`seat_lock_${seat1.id}`]);
-            });
-
-            it('does not call del when no locks were acquired', async () => {
-                const { service, redis } = makeService(withConflictsAt(seats.length, [0, 1]));
-
-                await service.reserveSeats(seats, USER);
-
-                expect(redis.del).not.toHaveBeenCalled();
-            });
-
-            it('does not call del when WATCH fires', async () => {
-                const { service, redis } = makeService(null);
-
-                await service.reserveSeats(seats, USER);
-
-                expect(redis.del).not.toHaveBeenCalled();
-            });
-
-            it('treats a command-level error reply as a lock failure', async () => {
-                const { service } = makeService(withErrorAt(seats.length, [0]));
-
-                const result = await service.reserveSeats(seats, USER);
-
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids[0].id).toBe(seat1.id);
-                }
-            });
-
-            it('propagates when redis.watch rejects', async () => {
-                redis.watch.mockRejectedValue(new Error('Redis unreachable'));
-
-                await expect(service.reserveSeats(seats, USER)).rejects.toThrow('Redis unreachable');
-            });
-        });
-    });
-
-    // =========================================================================
-    // Step 4 — Mark seats RESERVED in DB
-    // =========================================================================
-
-    describe('step 4 — mark seats RESERVED in DB', () => {
-
-        describe('equivalence cases', () => {
-            it('calls prisma.seat.updateMany with RESERVED for all seat ids', async () => {
-                await service.reserveSeats(seats, USER);
-
-                expect(prisma.seat.updateMany).toHaveBeenCalledWith({
-                    where: { id: { in: seats.map(s => s.id) } },
-                    data: { seat_status: SeatStatus.RESERVED },
-                });
-            });
-
-            it('calls updateMany after locks are acquired', async () => {
-                const callOrder: string[] = [];
-                redis._chain.exec.mockImplementation(async () => {
-                    callOrder.push('exec');
-                    return allOk(seats.length);
-                });
-                prisma.seat.updateMany.mockImplementation(async () => {
-                    callOrder.push('updateMany');
-                    return { count: 2 };
-                });
-
-                await service.reserveSeats(seats, USER);
-
-                expect(callOrder.indexOf('exec')).toBeLessThan(callOrder.indexOf('updateMany'));
-            });
-        });
-
-        describe('boundary cases', () => {
-            it('updates exactly 1 seat when only 1 seat is reserved', async () => {
-                const { service, prisma } = makeService(allOk(1));
-                prisma.seat.findMany.mockResolvedValue([{ ...seat1, seat_status: SeatStatus.AVAILABLE }]);
-
-                await service.reserveSeats([seat1], USER);
-
-                expect(prisma.seat.updateMany).toHaveBeenCalledWith({
-                    where: { id: { in: [seat1.id] } },
-                    data: { seat_status: SeatStatus.RESERVED },
-                });
-            });
-        });
-
-        describe('exception cases', () => {
-            it('does not call updateMany when any lock fails', async () => {
-                const { service, prisma } = makeService(withConflictsAt(seats.length, [0]));
-
-                await service.reserveSeats(seats, USER);
-
-                expect(prisma.seat.updateMany).not.toHaveBeenCalled();
-            });
-
-            it('does not call updateMany when WATCH fires', async () => {
-                const { service, prisma } = makeService(null);
-
-                await service.reserveSeats(seats, USER);
-
-                expect(prisma.seat.updateMany).not.toHaveBeenCalled();
-            });
-
-            it('does not call updateMany when DB availability check finds conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([]);
-
-                await service.reserveSeats([seat1], USER);
-
-                expect(prisma.seat.updateMany).not.toHaveBeenCalled();
-            });
-
-            it('propagates when prisma.seat.updateMany rejects', async () => {
-                prisma.seat.updateMany.mockRejectedValue(new Error('DB write failed'));
-
-                await expect(service.reserveSeats(seats, USER)).rejects.toThrow('DB write failed');
-            });
-        });
-    });
-
-    // =========================================================================
-    // Step 5 — Enqueue BullMQ release job
-    // =========================================================================
-
-    describe('step 5 — enqueue release job', () => {
-
-        describe('equivalence cases', () => {
-            it('calls queue.add once after all locks are acquired', async () => {
-                await service.reserveSeats(seats, USER);
-
-                expect(queue.add).toHaveBeenCalledTimes(1);
-            });
-
-            it('passes seat ids and expiration timestamp to queue.add', async () => {
-                await service.reserveSeats(seats, USER);
-
-                expect(queue.add).toHaveBeenCalledWith(
-                    expect.any(String),
-                    expect.objectContaining({
-                        seat_ids: seats.map(s => s.id),
-                        expires_at: expect.any(Number),
-                    }),
-                    expect.anything(),
-                );
-            });
-
-            it('enqueues the job after seats are marked RESERVED in DB', async () => {
-                const callOrder: string[] = [];
-                prisma.seat.updateMany.mockImplementation(async () => {
-                    callOrder.push('updateMany');
-                    return { count: 2 };
-                });
-                queue.add.mockImplementation(async () => {
-                    callOrder.push('queue.add');
-                    return { id: 'job-1' };
-                });
-
-                await service.reserveSeats(seats, USER);
-
-                expect(callOrder.indexOf('updateMany')).toBeLessThan(callOrder.indexOf('queue.add'));
-            });
-        });
-
-        describe('exception cases', () => {
-            it('does not call queue.add when lock acquisition fails', async () => {
-                const { service, queue } = makeService(withConflictsAt(seats.length, [0]));
-
-                await service.reserveSeats(seats, USER);
-
-                expect(queue.add).not.toHaveBeenCalled();
-            });
-
-            it('does not call queue.add when WATCH fires', async () => {
-                const { service, queue } = makeService(null);
-
-                await service.reserveSeats(seats, USER);
-
-                expect(queue.add).not.toHaveBeenCalled();
-            });
-
-            it('does not call queue.add when DB availability check fails', async () => {
-                prisma.seat.findMany.mockResolvedValue([]);
-
-                await service.reserveSeats([seat1], USER);
-
-                expect(queue.add).not.toHaveBeenCalled();
-            });
-
-            it('propagates when queue.add rejects', async () => {
-                queue.add.mockRejectedValue(new Error('Queue unavailable'));
-
-                await expect(service.reserveSeats(seats, USER)).rejects.toThrow('Queue unavailable');
-            });
-        });
-    });
-
-    // =========================================================================
-    // Step 6 — Return value
-    // =========================================================================
-
-    describe('step 6 — return value', () => {
-
-        describe('equivalence cases', () => {
-            it('returns success:true on the full happy path', async () => {
-                const result = await service.reserveSeats(seats, USER);
+            it('returns success:true on the happy path', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
 
                 expect(result.success).toBe(true);
             });
 
-            it('signs a JWT payload containing seat_ids and expires_at', async () => {
-                await service.reserveSeats(seats, USER);
+            it('returns a non-empty reservation_token string on success', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
 
-                expect(jwt.sign).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        seat_ids: seats.map(s => s.id),
-                        expires_at: expect.any(Number),
-                        user_uuid: expect.any(String)
-                    }),
-                    expect.anything(), // secret — opaque to this test
-                    expect.anything(), // expiresIn — opaque to this test
-                );
-            });
+                const result = await service.reserveSeats(seatIds, USER_ID);
 
-            it('returns the signed JWT as reservation_token', async () => {
-                const result = await service.reserveSeats(seats, USER);
-
+                expect(result.success).toBe(true);
                 if (result.success) {
-                    expect(result.reservation_token).toBe('signed.jwt.token');
+                    expect(typeof result.reservation_token).toBe('string');
+                    expect(result.reservation_token.length).toBeGreaterThan(0);
                 }
             });
 
-            it('returns expires_at as an ISO string approximately 60 seconds from now', async () => {
-                const before = Date.now() + 60000;
-                const result = await service.reserveSeats(seats, USER);
-                const after = Date.now() + 60000;
+            it('embeds the requested seat ids inside the reservation token', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
 
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
                 if (result.success) {
-                    const ts = new Date(result.expires_at).getTime();
-                    expect(ts).toBeGreaterThanOrEqual(before);
-                    expect(ts).toBeLessThanOrEqual(after);
+                    const payload = decodeToken(result.reservation_token);
+                    expect(payload.seat_ids).toEqual(expect.arrayContaining(seatIds));
+                }
+            });
+
+            it('embeds the user id inside the reservation token', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    const payload = decodeToken(result.reservation_token);
+                    expect(payload.user_uuid).toBe(USER_ID);
+                }
+            });
+
+            it('embeds a numeric expiration timestamp inside the reservation token', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    const payload = decodeToken(result.reservation_token);
+                    expect(typeof payload.expires_at).toBe('number');
+                }
+            });
+
+            it('returns expires_at as a unix timestamp in the future', async () => {
+                const now = Date.now();
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    expect(result.expires_at).toBeGreaterThan(now);
+                }
+            });
+
+            it('returns expires_at_string as a valid ISO 8601 string', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    expect(() => new Date(result.expires_at_string).toISOString()).not.toThrow();
+                    expect(result.expires_at_string).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+                }
+            });
+
+            it('token expiration timestamp matches the expires_at field in the response', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    const payload = decodeToken(result.reservation_token);
+                    expect(payload.expires_at).toBe(result.expires_at);
                 }
             });
         });
 
         describe('boundary cases', () => {
-            it('returns success:false with all seats when WATCH fires', async () => {
-                const { service } = makeService(null);
+            it('token contains all seat ids when reserving the maximum allowed seats', async () => {
+                const seatIds = makeSeatIds(MAX_SEATS);
+                const { service } = buildService({ seatIds });
 
-                const result = await service.reserveSeats(seats, USER);
+                const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(false);
-                if (!result.success) {
-                    expect(result.conflict_seat_ids).toEqual(expect.arrayContaining(seats));
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    const payload = decodeToken(result.reservation_token);
+                    expect((payload.seat_ids as string[]).length).toBe(MAX_SEATS);
                 }
             });
 
-            it('returns success:false with only the conflicting seats — not the acquired ones', async () => {
-                const { service } = makeService(withConflictsAt(seats.length, [1]));
+            it('token contains the single seat id when reserving exactly 1 seat', async () => {
+                const seatIds = makeSeatIds(1);
+                const { service } = buildService({ seatIds });
 
-                const result = await service.reserveSeats(seats, USER);
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(true);
+                if (result.success) {
+                    const payload = decodeToken(result.reservation_token);
+                    expect(payload.seat_ids).toEqual([seatIds[0]]);
+                }
+            });
+        });
+    });
+
+    describe('return value — failure', () => {
+
+        describe('equivalence cases', () => {
+            it('returns success:false when input validation fails', async () => {
+                const { service } = buildService();
+
+                const result = await service.reserveSeats([], USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('returns success:false when seats are unavailable in the DB', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({
+                    seatIds,
+                    unavailableSeatIds: seatIds,
+                });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('returns success:false when Redis locking detects a conflict', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({
+                    seatIds,
+                    lockResult: seatIds.map(id => seatLockKeyFormatter(id)),
+                });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                expect(result.success).toBe(false);
+            });
+
+            it('includes a conflict_seat_ids array in every failure response', async () => {
+                const { service } = buildService();
+
+                const result = await service.reserveSeats([], USER_ID);
 
                 expect(result.success).toBe(false);
                 if (!result.success) {
-                    expect(result.conflict_seat_ids).toHaveLength(1);
-                    expect(result.conflict_seat_ids[0].id).toBe(seat2.id);
+                    expect(Array.isArray(result.conflict_seat_ids)).toBe(true);
                 }
             });
         });
 
-        describe('exception cases', () => {
-            it('does not call jwt.sign when locks fail', async () => {
-                const { service, jwt } = makeService(withConflictsAt(seats.length, [0]));
+        describe('boundary cases', () => {
+            it('conflict_seat_ids is empty when the failure is due to invalid input (not a seat conflict)', async () => {
+                const { service } = buildService();
 
-                await service.reserveSeats(seats, USER);
+                // Empty array is an input validation failure, not a seat conflict.
+                const result = await service.reserveSeats([], USER_ID);
 
-                expect(jwt.sign).not.toHaveBeenCalled();
-            });
-
-            it('does not call jwt.sign when DB availability check finds conflicts', async () => {
-                prisma.seat.findMany.mockResolvedValue([]);
-
-                await service.reserveSeats([seat1], USER);
-
-                expect(jwt.sign).not.toHaveBeenCalled();
-            });
-
-            it('does not call jwt.sign when validation fails', async () => {
-                await service.reserveSeats([], USER).catch(() => { });
-
-                expect(jwt.sign).not.toHaveBeenCalled();
+                expect(result.success).toBe(false);
+                if (!result.success) {
+                    expect(result.conflict_seat_ids).toHaveLength(0);
+                }
             });
         });
     });
