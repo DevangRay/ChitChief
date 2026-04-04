@@ -39,6 +39,12 @@ const MAX_SEATS = 10;
 const USER_ID = 'user-uuid-1';
 const EVENT_ID = 'event-uuid-1';
 
+const EXPECTED_SUCCESS_RETURN_OBJECT =
+{
+    reservation_token: expect.any(String),
+    expires_at: expect.any(Number),
+    expires_at_string: expect.any(String)
+};
 // ─────────────────────────────────────────────────────────────────────────────
 // Seed helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,7 +190,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
             });
         });
 
@@ -195,7 +201,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
             });
 
             it(`succeeds with exactly ${MAX_SEATS} seats (maximum valid count)`, async () => {
@@ -204,7 +210,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
             });
 
             it('fails immediately with 0 seats (below minimum)', async () => {
@@ -271,7 +277,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
             });
 
             it('fails when none of the requested seats are available', async () => {
@@ -344,7 +350,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
             });
 
             it('fails when all seats are already locked by another user', async () => {
@@ -436,7 +442,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
                 // Confirm the DB update was issued for the correct ids.
                 expect(prisma.seat.updateMany).toHaveBeenCalledWith(
                     expect.objectContaining({
@@ -474,7 +480,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
             });
 
             it('returns a non-empty reservation_token string on success', async () => {
@@ -483,11 +489,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    expect(typeof result.reservation_token).toBe('string');
-                    expect(result.reservation_token.length).toBeGreaterThan(0);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                expect(typeof result.reservation_token).toBe('string');
+                expect(result.reservation_token.length).toBeGreaterThan(0);
             });
 
             it('embeds the requested seat ids inside the reservation token', async () => {
@@ -496,11 +500,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    const payload = decodeToken(result.reservation_token);
-                    expect(payload.seat_ids).toEqual(expect.arrayContaining(seatIds));
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                const payload = decodeToken(result.reservation_token);
+                expect(payload.seat_ids).toEqual(expect.arrayContaining(seatIds));
             });
 
             it('embeds the user id inside the reservation token', async () => {
@@ -509,11 +511,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    const payload = decodeToken(result.reservation_token);
-                    expect(payload.user_uuid).toBe(USER_ID);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                const payload = decodeToken(result.reservation_token);
+                expect(payload.user_uuid).toBe(USER_ID);
             });
 
             it('embeds a numeric expiration timestamp inside the reservation token', async () => {
@@ -522,11 +522,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    const payload = decodeToken(result.reservation_token);
-                    expect(typeof payload.expires_at).toBe('number');
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                const payload = decodeToken(result.reservation_token);
+                expect(typeof payload.expires_at).toBe('number');
             });
 
             it('returns expires_at as a unix timestamp in the future', async () => {
@@ -536,10 +534,8 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    expect(result.expires_at).toBeGreaterThan(now);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                expect(result.expires_at).toBeGreaterThan(now);
             });
 
             it('returns expires_at_string as a valid ISO 8601 string', async () => {
@@ -548,11 +544,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    expect(() => new Date(result.expires_at_string).toISOString()).not.toThrow();
-                    expect(result.expires_at_string).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                expect(() => new Date(result.expires_at_string).toISOString()).not.toThrow();
+                expect(result.expires_at_string).toMatch(/^\d{4}-\d{2}-\d{2}T/);
             });
 
             it('token expiration timestamp matches the expires_at field in the response', async () => {
@@ -561,11 +555,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    const payload = decodeToken(result.reservation_token);
-                    expect(payload.expires_at).toBe(result.expires_at);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                const payload = decodeToken(result.reservation_token);
+                expect(payload.expires_at).toBe(result.expires_at);
             });
         });
 
@@ -576,11 +568,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    const payload = decodeToken(result.reservation_token);
-                    expect((payload.seat_ids as string[]).length).toBe(MAX_SEATS);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                const payload = decodeToken(result.reservation_token);
+                expect((payload.seat_ids as string[]).length).toBe(MAX_SEATS);
             });
 
             it('token contains the single seat id when reserving exactly 1 seat', async () => {
@@ -589,11 +579,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
-                expect(result.success).toBe(true);
-                if (result.success) {
-                    const payload = decodeToken(result.reservation_token);
-                    expect(payload.seat_ids).toEqual([seatIds[0]]);
-                }
+                expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
+                const payload = decodeToken(result.reservation_token);
+                expect(payload.seat_ids).toEqual([seatIds[0]]);
             });
         });
     });
