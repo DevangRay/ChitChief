@@ -3,42 +3,30 @@ import { TicketService } from "./tickets.service";
 import { Seat, SeatStatus } from "@prisma/client";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
+import { reserveTicketSchema } from "./tickets.schema";
+
+type ReserveTicketRequestBody = {
+    seat_ids: string[],
+    user_uuid: string
+}
 
 // MAX_RETRIES > 0 (otherwise /reserve will auto return 500)
 const MAX_RETRIES = 3;
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new TicketService(fastify.redis, fastify.prisma);
 
-    fastify.get('/reserve', async (request, reply) => {
+    fastify.post('/reserve', { schema: reserveTicketSchema }, async (request, reply) => {
+        const request_body = request.body as ReserveTicketRequestBody;
+        const seat_ids = request_body.seat_ids;
+        const user_uuid = request_body.user_uuid;
+
         try {
-            const seats_array: Seat[] = [
-                {
-                    id: "1aaff027-dd70-4932-a00f-b4f4afb4a36e",
-                    event_id: "50b4f4cf-77f1-4d75-a662-8ed9b58090d3",
-                    row: "A",
-                    number: 1,
-                    price: 10000,
-                    seat_status: SeatStatus.AVAILABLE
-                },
-                {
-                    id: "58ad014c-0bde-4c15-9c28-d202584937cd",
-                    event_id: "50b4f4cf-77f1-4d75-a662-8ed9b58090d3",
-                    row: "A",
-                    number: 2,
-                    price: 10000,
-                    seat_status: SeatStatus.AVAILABLE
-                }
-            ]
-
-            const seat_ids = seats_array.map(seat => seat.id);
-            const user_id = '2d62c96e-0078-4653-98ba-595644b67b82';
-
             // add retry jitter -> catch case where multiple requests come in at same time for same seats, and all get through redis lock check before locks are set
             let attempt_error: Error | undefined;
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                 try {
                     console.log(`Running attempt #${attempt}`);
-                    const result = await service.reserveSeats(seat_ids, user_id);
+                    const result = await service.reserveSeats(seat_ids, user_uuid);
 
                     return reply.status(200).send(result);
                 } catch (error) {
@@ -68,7 +56,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
                 console.log("[tickets.routes]: Caught 409 Error")
                 return reply.status(409).send({ message: attempt_error.message, conflict_seat_ids: attempt_error.conflict_seat_ids });
             }
-            
+
             // Unexpcted error after retries
             return reply.status(500).send({ message: 'Internal server error.' });
         } catch (error) {

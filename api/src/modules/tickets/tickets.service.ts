@@ -7,7 +7,6 @@ import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 
 type ReservationObject = {
-    success: true,
     reservation_token: string,
     expires_at: number,
     expires_at_string: string
@@ -17,6 +16,7 @@ type ReservationObject = {
 TODO:
     * Extract steps to helper functions
     * Add support for return code: 500/404/409
+    * Need to check if user exists in the DB
 */
 
 
@@ -174,7 +174,6 @@ export class TicketService {
         );
 
         return {
-            success: true,
             reservation_token: signed_token,
             expires_at: expiration_timestamp,
             expires_at_string: new Date(expiration_timestamp).toISOString()
