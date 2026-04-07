@@ -57,6 +57,9 @@ const EXPECTED_SUCCESS_RETURN_OBJECT =
     expires_at_string: expect.any(String)
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Mocking Stripe module
+// ─────────────────────────────────────────────────────────────────────────────
 const paymentIntentsCreateMock = vi.fn().mockResolvedValue({
     id: STRIPE_PAYMENT_INTENT_ID,
     client_secret: STRIPE_CLIENT_SECRET,
@@ -178,20 +181,6 @@ const buildPaymentService = ({
             })
         }
     };
-
-    // const paymentIntentsCreateMock = stripeError
-    //     ? vi.fn().mockRejectedValue(stripeError)
-    //     : vi.fn().mockResolvedValue({ client_secret: STRIPE_CLIENT_SECRET });
-
-    // vi.doMock('stripe', () => ({
-    //     // Stripe is a class — mock the constructor to return our stub instance.
-    //     default: vi.fn().mockImplementation(() => ({
-    //         paymentIntents: {
-    //             create: paymentIntentsCreateMock,
-    //         },
-    //     })),
-    // }));
-
 
     const service = new TicketService(redisMock as any, prismaMock as any);
 
