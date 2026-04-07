@@ -67,8 +67,8 @@ model Order {
   user_id String
   user User @relation(fields: [user_id], references: [id])
   order_status OrderStatus @default(PENDING)
-  stripe_payment_id String? @unique
-  stripe_payment_info StripePaymentInfo? @relation(fields: [stripe_payment_id], references: [id])
+  stripe_payment_id String @unique
+  stripe_payment_info StripePaymentInfo @relation(fields: [stripe_payment_id], references: [id])
   idempotency_key String @unique
   created_at DateTime @default(now())
   orderseats OrderSeats[]
@@ -92,7 +92,8 @@ model OrderSeats {
 
 model StripePaymentInfo {
   id String @id @default(uuid())
-  payment_id String
+  payment_intent_id String
+  client_secret String
   order Order?
 }
 
