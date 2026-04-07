@@ -43,6 +43,7 @@ const IDEMPOTENCY_KEY = 'idem-key-uuid-1';
 const ORDER_ID = 'order-uuid-1';
 const STRIPE_PAYMENT_INFO_ID = 'stripe-payment-info-uuid-1';
 const STRIPE_CLIENT_SECRET = 'pi_test_secret_abc123';
+const STRIPE_PAYMENT_INTENT_ID = 'payment_intent_id'
 
 const EXPECTED_PAYMENT_INTENT_RETURN_OBJECT = {
     client_secret: expect.any(String),
@@ -139,7 +140,15 @@ const buildPaymentService = ({
     const prismaMock = {
         ...makePrismaMock(makeAvailableSeats(seatIds)),
         order: {
-            findUnique: vi.fn().mockResolvedValue(existingOrder),
+            findUnique: existingOrder
+                ? vi.fn().mockResolvedValue({
+                    ...existingOrder,
+                    stripe_payment_info: {
+                        id: STRIPE_PAYMENT_INFO_ID,
+                        client_secret: STRIPE_CLIENT_SECRET
+                    }
+                })
+                : vi.fn().mockResolvedValue(null),
             create: dbWriteError
                 ? vi.fn().mockRejectedValue(dbWriteError)
                 : vi.fn().mockResolvedValue({ id: ORDER_ID }),
@@ -148,7 +157,10 @@ const buildPaymentService = ({
             createMany: vi.fn().mockResolvedValue({ count: seatIds.length }),
         },
         stripePaymentInfo: {
-            create: vi.fn().mockResolvedValue({ id: STRIPE_PAYMENT_INFO_ID })
+            create: vi.fn().mockResolvedValue({
+                id: STRIPE_PAYMENT_INFO_ID,
+                client_secret: STRIPE_CLIENT_SECRET
+            })
         }
     };
 
@@ -264,7 +276,7 @@ describe('TicketService.reserveSeats — behavior', () => {
     // Set the signing secret so jwt.sign works in the actual service.
     beforeEach(() => {
         process.env.SIGNING_SECRET = 'test-secret-for-unit-tests';
-        process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+        process.env.STRIPE_SECRET_KEY = 'test-stripe-secret-for-unit-tests';
         vi.clearAllMocks();
     });
 
@@ -734,8 +746,9 @@ describe('TicketService.reserveSeats — behavior', () => {
 describe('TicketService.createPaymentIntent — behavior', () => {
 
     beforeEach(() => {
-        process.env.SIGNING_SECRET = 'test-secret-for-unit-tests';
         vi.clearAllMocks();
+        process.env.SIGNING_SECRET = 'test-secret-for-unit-tests';
+        process.env.STRIPE_SECRET_KEY = 'sk_test_mock_keytest-stripe-secret-for-unit-tests';
     });
 
     // =========================================================================
@@ -1089,7 +1102,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const token = makeValidToken(seatIds);
                 const { service, prismaMock } = buildPaymentService({ seatIds });
 
-                prismaMock.order.findFirst.mockRejectedValue(new Error('DB connection lost'));
+                prismaMock.order.findUnique.mockRejectedValue(new Error('DB connection lost'));
 
                 await expect(
                     service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY),
@@ -1156,7 +1169,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
                 await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
 
-                expect(prismaMock.orderSeat.createMany).toHaveBeenCalledWith(
+                expect(prismaMock.orderSeats.createMany).toHaveBeenCalledWith(
                     expect.objectContaining({
                         data: expect.arrayContaining(
                             seatIds.map(id => expect.objectContaining({ seat_id: id })),
