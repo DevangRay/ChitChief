@@ -1,10 +1,18 @@
-import { PrismaClient, Seat, SeatStatus } from "@prisma/client"
+import { OrderStatus, PrismaClient, Seat, SeatStatus } from "@prisma/client"
 import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
 import Redis from "ioredis";
+import Stripe from 'stripe';
 import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
+import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
+
+type SigningObject = {
+    seat_ids: string[],
+    expires_at: number,
+    user_uuid: string
+} | null
 
 type ReservationObject = {
     reservation_token: string,
@@ -62,14 +70,14 @@ export class TicketService {
         });
     }
 
-    async reserveSeats(seats: string[], user: string): Promise<ReservationObject> {
+    async reserveSeats(seats: string[], user_uuid: string): Promise<ReservationObject> {
         // 1. Validate seats and user
         console.log("[reserveSeats] Validating seats and user parameters.");
         if (!seats || seats.length === 0 || seats.length > 10) {
             console.log("[reserveSeats] Invalid number of seats provided for reservation.");
             throw new ResourceNotFoundError("Invalid number of seats provided.")
         }
-        if (!user) {
+        if (!user_uuid) {
             console.log("[reserveSeats] No user provided for reservation.");
             throw new ResourceNotFoundError("No user provided.")
         }
@@ -97,7 +105,7 @@ export class TicketService {
 
             const available_seat_ids = new Set(seat_statuses.map((s: Seat) => s.id));
             const unavailable_seats = seats.filter(seat => !available_seat_ids.has(seat));
-            
+
             throw new SeatConflictError("Some seats are not available.", unavailable_seats);
         }
         console.log("[reserveSeats] Seats are available.")
@@ -111,7 +119,7 @@ export class TicketService {
             REDIS_LOCK_LUA_SCRIPT,
             unique_seat_ids.length,
             ...array,
-            user,
+            user_uuid,
             String(expiration_timestamp)
         ) as string[];
 
@@ -122,12 +130,12 @@ export class TicketService {
             throw new SeatConflictError("Some seats are not available.", conflicting_seat_ids);
         }
 
-        console.log("DEBUG: [reserveSeats] Checking current keys in Redis:");
-        await this.redis.keys('*').then((keys: string[]) => {
-            console.log('All keys:', keys);
-        }).catch((err: any) => {
-            console.error(err);
-        });
+        // console.log("DEBUG: [reserveSeats] Checking current keys in Redis:");
+        // await this.redis.keys('*').then((keys: string[]) => {
+        //     console.log('All keys:', keys);
+        // }).catch((err: any) => {
+        //     console.error(err);
+        // });
 
         // 4. Update all seats to RESERVED in DB
         console.log("[reserveSeats] Updating seat statuses to RESERVED in database.");
@@ -162,13 +170,12 @@ export class TicketService {
         const signable_payload = {
             seat_ids: seats,
             expires_at: expiration_timestamp,
-            user_uuid: user
+            user_uuid: user_uuid
         }
         const signed_token = jwt.sign(
             signable_payload,
             process.env.SIGNING_SECRET!,
             {
-                // expires in TTL_TIME_IN_SECONDS seconds
                 expiresIn: TTL_TIME_IN_SECONDS
             }
         );
@@ -177,6 +184,157 @@ export class TicketService {
             reservation_token: signed_token,
             expires_at: expiration_timestamp,
             expires_at_string: new Date(expiration_timestamp).toISOString()
+        }
+    }
+
+    async createPaymentIntent(reservation_token: string, user_uuid: string, idempotency_key: string) {
+        // validate input
+        console.log('[createPaymentIntent] Validating input.')
+        if (!reservation_token) {
+            throw new ResourceNotFoundError("Invalid reservation token provided.")
+        }
+        if (!user_uuid) {
+            throw new ResourceNotFoundError("Invalid user UUID provided.")
+        }
+        if (!idempotency_key) {
+            throw new ResourceNotFoundError("Invalid idempotency key provided.")
+        }
+        console.log('[createPaymentIntent] Validation successful for reservation_token and user_uuid.')
+
+        // unsign reservation_token
+        console.log('[createPaymentIntent] Retrieving payload from JWT reservation token.')
+        let payload = null as SigningObject;
+        try {
+            payload = jwt.verify(reservation_token, process.env.SIGNING_SECRET!) as SigningObject;
+            if (!payload || payload.user_uuid !== user_uuid) {
+                throw new ForbiddenError("Reservation token is not associated with this User.");
+            }
+        } catch (error) {
+            if (error instanceof Error && error.name === 'TokenExpiredError') {
+                console.log("Token has expired");
+                throw new ForbiddenError("Token has expired.")
+            } else {
+                throw new ForbiddenError("Invalid Reservation Token.");
+            }
+        }
+        console.log(`[createPaymentIntent] Retrieved payload: (${payload})`)
+
+        // verify the redis locks on seat are owned by user
+        console.log(`[createPaymentIntent] Verifying Redis locks on all seats tied to calling User`)
+        const conflict_seat_ids = []
+        for (const seat of payload.seat_ids) {
+            const seat_lock = seatLockFromId(seat);
+            const redis_key = await this.redis.get(seat_lock);
+            if (!redis_key || redis_key !== user_uuid) {
+                conflict_seat_ids.push(seat);
+            }
+        }
+        if (conflict_seat_ids.length > 0) {
+            throw new SeatConflictError("Temporary lock on some Seats have expired.", conflict_seat_ids)
+        }
+        console.log(`[createPaymentIntent] All Redis keys are valid`)
+
+        // check if idempotency key exists (meaning order already created)
+        console.log(`[createPaymentIntent] Querying for existing idempotency key.`)
+        const potential_order_status = await this.prisma.order.findUnique({
+            where: {
+                user_id: user_uuid,
+                idempotency_key: idempotency_key
+            },
+            include: {
+                stripe_payment_info: true
+            }
+        })
+        console.log(`[createPaymentIntent] Found result:`, potential_order_status)
+        if (potential_order_status) {
+            return {
+                client_secret: potential_order_status.stripe_payment_info.client_secret,
+                order_id: potential_order_status.id
+            }
+        } else {
+            console.log(`[createPaymentIntent] No Order exists. Need to create.`)
+        }
+
+        // get total price from keys
+        console.log(`[createPaymentIntent] Building billable price`)
+        const requested_seats = await this.prisma.seat.findMany({
+            where: {
+                id: {
+                    in: payload.seat_ids
+                }
+            }
+        }) as Seat[];
+
+        const total_price = requested_seats.reduce((sum, seat) => {
+            return sum + seat.price;
+        }, 0);
+
+        // create payment intent
+        //      call needs private key, price, currency, 
+        //      optional: description, receipt email, statement description, 
+        console.log(`[createPaymentIntent] Creating Payment Intent`)
+        // const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY!);
+        const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
+        const payment_intent = await stripe.paymentIntents.create({
+            amount: total_price,
+            currency: 'usd',
+            description: 'Testing PaymentIntent for Seats',
+            receipt_email: 'devangray624+stripetest@gmail.com',
+            statement_descriptor: 'Statement Descriptor',
+            statement_descriptor_suffix: 'SDS'
+        })
+        console.log(`[createPaymentIntent] Payment Intent created:`, payment_intent);
+
+        // create StripePaymentInfo
+        console.log(`[createPaymentIntent] Creating StripePaymentInfo object for PaymentIntent`);
+        const create_stripe_payment_status = await this.prisma.stripePaymentInfo.create({
+            data: {
+                payment_intent_id: payment_intent.id,
+                client_secret: payment_intent.client_secret ? payment_intent.client_secret : "No secret"
+            }
+        })
+        console.log(`[createPaymentIntent] Created StripePaymentInfo:`, create_stripe_payment_status);
+
+        // create Order
+        console.log(`[createPaymentIntent] Creating Order object associated with tickets`);
+        const create_order_status = await this.prisma.order.create({
+            data: {
+                user_id: user_uuid,
+                order_status: OrderStatus.PENDING,
+                idempotency_key: idempotency_key,
+                stripe_payment_id: create_stripe_payment_status.id
+            }
+        });
+        console.log(`[createPaymentIntent] Created order:`, create_order_status);
+
+        // create OrderSeats
+        console.log(`[createPaymentIntent] Creating OrderSeats objects for each Seat`);
+        const created_order_id = create_order_status.id;
+        const order_seats_data = requested_seats.map((seat) => {
+            return {
+                order_id: created_order_id,
+                seat_id: seat.id,
+                price_at_purchase: seat.price
+            }
+        });
+        const create_order_seats_status = await this.prisma.orderSeats.createMany({
+            data: order_seats_data
+        })
+        console.log(`[createPaymentIntent] Created OrderSeats:`, create_order_seats_status);
+
+        // Set worker to update Order
+        await this.reservation_queue.add(
+            'expire_pending_order',
+            { order_id: created_order_id },
+            {
+                delay: TTL_TIME_IN_SECONDS * 1000 // delay in milliseconds
+            }
+        )
+
+        // return client secret and order ID
+        return {
+            client_secret: payment_intent.client_secret,
+            order_id: created_order_id
         }
     }
 }

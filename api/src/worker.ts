@@ -1,12 +1,11 @@
 import { Worker } from 'bullmq';
 import { createPrismaClient } from './lib/prisma-factory';
 import IORedis from 'ioredis';
-import { SeatStatus } from '@prisma/client';
+import { OrderStatus, SeatStatus } from '@prisma/client';
 import { seatLockFromId } from './lib/redis-keys';
 import 'dotenv/config';
 import { getDateForLogs } from './lib/date-formatter';
 
-console.log('[worker] Starting worker with environment variables:', process.env.DATABASE_URL, process.env.REDIS_URL);
 const connection = new IORedis(
     process.env.REDIS_URL!,
     {
@@ -44,6 +43,38 @@ const worker = new Worker(
             await multi_chain.exec();
 
             console.log(`[worker: ${getDateForLogs()}] Released locks and reset seat statuses for seat ids: ${seat_ids.join(', ')}`);
+        } else if (job.name === 'expire_pending_order') {
+            console.log(`[worker: ${getDateForLogs()}] Processing expire_pending_order job with data:`, job.data);
+            const { order_id } = job.data;
+
+            const target_order = await prisma.order.findUnique({
+                where: {
+                    id: order_id,
+                    order_status: OrderStatus.PENDING
+                }
+            })
+
+            if (target_order) {
+                await prisma.order.update({
+                    where: {
+                        id: order_id
+                    },
+                    data: {
+                        order_status: OrderStatus.EXPIRED
+                    }
+                });
+
+                await prisma.orderSeats.deleteMany({
+                    where: {
+                        order_id: order_id
+                    }
+                });
+
+                console.log(`[worker: ${getDateForLogs()}] Set Order Status to EXPIRED and Deleted associated Order Seats for Order ID: ${order_id}`);
+            } else {
+                console.log(`[worker: ${getDateForLogs()}] Order was already handled: ${order_id}`);
+            }
+
         }
     },
     { connection }

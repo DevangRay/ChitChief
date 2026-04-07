@@ -1,6 +1,5 @@
 import { FastifyInstance } from "fastify";
 import { TicketService } from "./tickets.service";
-import { Seat, SeatStatus } from "@prisma/client";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import { reserveTicketSchema } from "./tickets.schema";
@@ -8,6 +7,11 @@ import { reserveTicketSchema } from "./tickets.schema";
 type ReserveTicketRequestBody = {
     seat_ids: string[],
     user_uuid: string
+}
+type PaymentIntentRequestBody = {
+    reservation_token: string,
+    user_uuid: string,
+    idempotency_key: string
 }
 
 // MAX_RETRIES > 0 (otherwise /reserve will auto return 500)
@@ -62,6 +66,26 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         } catch (error) {
             console.log("error: " + error);
             fastify.log.error(error, '[GET /reserve] Failed to reserve seats');
+            return reply.status(500).send({ message: 'Internal server error.' });
+        }
+    })
+
+    fastify.post('/payment/intent', async (request, reply) => {
+        const request_body = request.body as PaymentIntentRequestBody;
+        const reservation_token = request_body.reservation_token;
+        const user_uuid = request_body.user_uuid;
+        const idempotency_key = request_body.idempotency_key;
+
+        const response = await service.createPaymentIntent(reservation_token, user_uuid, idempotency_key);
+
+        return reply.status(200).send(response);
+    })
+
+    fastify.get('/idempotency_key', async (request, reply) => {
+        try {
+            const new_idempotency_key = crypto.randomUUID();
+            return reply.status(200).send({ idempotency_key: new_idempotency_key });
+        } catch (error) {
             return reply.status(500).send({ message: 'Internal server error.' });
         }
     })
