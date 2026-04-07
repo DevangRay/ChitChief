@@ -22,7 +22,7 @@
  *  - Error propagation: DB and Redis throw unexpected errors
  *  - Return value shape and token content
  */
-
+import 'dotenv/config';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
 import { SeatStatus } from '@prisma/client';
@@ -30,6 +30,7 @@ import * as jwt from 'jsonwebtoken';
 import { seatLockFromId } from '../../lib/redis-keys';
 import SeatConflictError from '../../lib/custom_errors/SeatConflictError';
 import ResourceNotFoundError from '../../lib/custom_errors/ResourceNotFoundError';
+import ForbiddenError from '../../lib/custom_errors/ForbiddenError';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -38,6 +39,15 @@ import ResourceNotFoundError from '../../lib/custom_errors/ResourceNotFoundError
 const MAX_SEATS = 10;
 const USER_ID = 'user-uuid-1';
 const EVENT_ID = 'event-uuid-1';
+const IDEMPOTENCY_KEY = 'idem-key-uuid-1';
+const ORDER_ID = 'order-uuid-1';
+const STRIPE_PAYMENT_INFO_ID = 'stripe-payment-info-uuid-1';
+const STRIPE_CLIENT_SECRET = 'pi_test_secret_abc123';
+
+const EXPECTED_PAYMENT_INTENT_RETURN_OBJECT = {
+    client_secret: expect.any(String),
+    order_id: expect.any(String),
+};
 
 const EXPECTED_SUCCESS_RETURN_OBJECT =
 {
@@ -64,6 +74,32 @@ const makeAvailableSeats = (ids: string[]) =>
         seat_status: SeatStatus.AVAILABLE,
     }));
 
+const makeValidToken = (
+    seatIds: string[],
+    userId: string = USER_ID,
+    expiresInSeconds = 600,
+): string =>
+    jwt.sign(
+        {
+            seat_ids: seatIds,
+            user_uuid: userId,
+            expires_at: Date.now() + expiresInSeconds * 1000,
+        },
+        process.env.SIGNING_SECRET ?? 'test-secret-for-unit-tests',
+        { expiresIn: expiresInSeconds },
+    );
+
+const makeExpiredToken = (seatIds: string[], userId: string = USER_ID): string =>
+    jwt.sign(
+        {
+            seat_ids: seatIds,
+            user_uuid: userId,
+            expires_at: Date.now() - 1000,
+        },
+        process.env.SIGNING_SECRET ?? 'test-secret-for-unit-tests',
+        { expiresIn: -1 },
+    );
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock factories
 //
@@ -79,6 +115,60 @@ const makeAvailableSeats = (ids: string[]) =>
 // happy path works out of the box.
 // ─────────────────────────────────────────────────────────────────────────────
 
+type LockState = 'valid' | 'missing' | 'wrong-owner';
+
+const buildPaymentService = ({
+    seatIds = makeSeatIds(2),
+    lockState = 'valid' as LockState,
+    existingOrder = null as null | { id: string; client_secret: string },
+    stripeError = undefined as Error | undefined,
+    dbWriteError = undefined as Error | undefined,
+    tokenUserId = USER_ID,
+} = {}) => {
+    // Redis: get() returns the owner string or null depending on lockState.
+    const redisMock = {
+        ...makeRedisMock('OK'),   // keep eval/pipeline/del stubs
+        get: vi.fn((key: string) => {
+            if (lockState === 'missing') return Promise.resolve(null);
+            if (lockState === 'wrong-owner') return Promise.resolve('other-user-uuid');
+            return Promise.resolve(tokenUserId); // 'valid'
+        }),
+    };
+
+    // Prisma: order lookup (idempotency) + order/orderSeat creation.
+    const prismaMock = {
+        ...makePrismaMock(makeAvailableSeats(seatIds)),
+        order: {
+            findUnique: vi.fn().mockResolvedValue(existingOrder),
+            create: dbWriteError
+                ? vi.fn().mockRejectedValue(dbWriteError)
+                : vi.fn().mockResolvedValue({ id: ORDER_ID }),
+        },
+        orderSeats: {
+            createMany: vi.fn().mockResolvedValue({ count: seatIds.length }),
+        },
+        stripePaymentInfo: {
+            create: vi.fn().mockResolvedValue({ id: STRIPE_PAYMENT_INFO_ID })
+        }
+    };
+
+    const paymentIntentsCreateMock = stripeError
+        ? vi.fn().mockRejectedValue(stripeError)
+        : vi.fn().mockResolvedValue({ client_secret: STRIPE_CLIENT_SECRET });
+
+    vi.doMock('stripe', () => ({
+        // Stripe is a class — mock the constructor to return our stub instance.
+        default: vi.fn().mockImplementation(() => ({
+            paymentIntents: {
+                create: paymentIntentsCreateMock,
+            },
+        })),
+    }));
+
+    const service = new TicketService(redisMock as any, prismaMock as any);
+
+    return { service, redisMock, prismaMock, paymentIntentsCreateMock };
+}
 /**
  * Create a Redis mock.
  *
@@ -174,6 +264,7 @@ describe('TicketService.reserveSeats — behavior', () => {
     // Set the signing secret so jwt.sign works in the actual service.
     beforeEach(() => {
         process.env.SIGNING_SECRET = 'test-secret-for-unit-tests';
+        process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
         vi.clearAllMocks();
     });
 
@@ -634,6 +725,578 @@ describe('TicketService.reserveSeats — behavior', () => {
                     await service.reserveSeats([], USER_ID);
                 } catch (error) {
                     expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+        });
+    });
+});
+
+describe('TicketService.createPaymentIntent — behavior', () => {
+
+    beforeEach(() => {
+        process.env.SIGNING_SECRET = 'test-secret-for-unit-tests';
+        vi.clearAllMocks();
+    });
+
+    // =========================================================================
+    // 1. Input validation
+    // =========================================================================
+
+    describe('input validation', () => {
+
+        describe('equivalence cases — valid input', () => {
+            it('succeeds for a standard valid request', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+            });
+        });
+
+        describe('exception cases — missing or empty parameters', () => {
+            it('fails when reservation_token is an empty string', async () => {
+                const { service } = buildPaymentService();
+
+                await expect(
+                    service.createPaymentIntent('', USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+
+            it('fails when reservation_token is null', async () => {
+                const { service } = buildPaymentService();
+
+                await expect(
+                    service.createPaymentIntent(null as any, USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+
+            it('fails when reservation_token is undefined', async () => {
+                const { service } = buildPaymentService();
+
+                await expect(
+                    service.createPaymentIntent(undefined as any, USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+
+            it('throws ResourceNotFoundError when user_uuid is an empty string', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(token, '', IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+
+            it('throws ResourceNotFoundError when user_uuid is null', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(token, null as any, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+
+            it('throws ResourceNotFoundError when user_uuid is undefined', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(token, undefined as any, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+
+            it('throws ResourceNotFoundError when idempotency_key is an empty string', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, '');
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+
+            it('throws ResourceNotFoundError when idempotency_key is null', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, null as any);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+
+            it('throws ResourceNotFoundError when idempotency_key is undefined', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, undefined as any);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+        });
+    });
+
+    // =========================================================================
+    // 2. Reservation token validation
+    // =========================================================================
+
+    describe('reservation token validation', () => {
+
+        describe('equivalence cases', () => {
+            it('succeeds when the token is valid and signed with the correct secret', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+            });
+
+            it('throws ForbiddenError when the token is signed with a different secret', async () => {
+                const seatIds = makeSeatIds(2);
+                const tamperedToken = jwt.sign(
+                    { seat_ids: seatIds, user_uuid: USER_ID },
+                    'wrong-secret',
+                    { expiresIn: 600 },
+                );
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(tamperedToken, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ForbiddenError);
+                }
+            });
+
+            it('throws ForbiddenError when the token is a random non-JWT string', async () => {
+                const { service } = buildPaymentService();
+
+                try {
+                    await service.createPaymentIntent('not.a.jwt', USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ForbiddenError);
+                }
+            });
+        });
+
+        describe('boundary cases', () => {
+            it('throws ForbiddenError when the token is expired', async () => {
+                const seatIds = makeSeatIds(2);
+                const expiredToken = makeExpiredToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                try {
+                    await service.createPaymentIntent(expiredToken, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ForbiddenError);
+                }
+            });
+
+            it('throws ForbiddenError when the user_uuid does not match the subject encoded in the token', async () => {
+                const seatIds = makeSeatIds(2);
+                // Token is signed for a different user than the one passed into the function
+                const token = makeValidToken(seatIds, 'other-user-uuid');
+                const { service } = buildPaymentService({ seatIds, tokenUserId: 'other-user-uuid' });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ForbiddenError);
+                }
+            });
+        });
+    });
+
+    // =========================================================================
+    // 3. Redis lock validation
+    // =========================================================================
+
+    describe('redis lock validation', () => {
+
+        describe('equivalence cases', () => {
+            it('succeeds when a valid lock exists for every seat in the token and is owned by the requesting user', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds, lockState: 'valid' });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+            });
+
+            it('throws SeatConflictError when no Redis lock exists for a seat in the token', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds, lockState: 'missing' });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                }
+            });
+
+            it('throws SeatConflictError when the lock exists but is owned by a different user', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds, lockState: 'wrong-owner' });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                }
+            });
+        });
+
+        describe('boundary cases', () => {
+            it('throws SeatConflictError when at least one seat lock is missing even if others are valid', async () => {
+                /**
+                 * Simulate one seat having no lock while another does.
+                 * We achieve this by overriding redis.get to return null for one
+                 * specific key and the correct owner for all others.
+                 */
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, redisMock } = buildPaymentService({ seatIds, lockState: 'valid' });
+
+                let callCount = 0;
+                redisMock.get.mockImplementation(() => {
+                    callCount++;
+                    return Promise.resolve(callCount === 1 ? USER_ID : null);
+                });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                }
+            });
+
+            it('throws SeatConflictError when at least one seat lock belongs to a different user', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, redisMock } = buildPaymentService({ seatIds, lockState: 'valid' });
+
+                let callCount = 0;
+                redisMock.get.mockImplementation(() => {
+                    callCount++;
+                    return Promise.resolve(callCount === 1 ? USER_ID : 'another-user');
+                });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
+                }
+            });
+        });
+
+        describe('exception cases', () => {
+            it('propagates unexpected errors thrown by the Redis lock check', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, redisMock } = buildPaymentService({ seatIds });
+
+                redisMock.get.mockRejectedValue(new Error('Redis connection refused'));
+
+                await expect(
+                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // 4. Idempotency — existing Order replay
+    // =========================================================================
+
+    describe('idempotency replay', () => {
+
+        describe('equivalence cases', () => {
+            it('returns the existing order immediately when an Order with the same idempotency_key and user_uuid already exists', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
+                const { service, paymentIntentsCreateMock } = buildPaymentService({
+                    seatIds,
+                    existingOrder,
+                });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+                // Stripe must NOT be called again — the result comes from the cached order.
+                expect(paymentIntentsCreateMock).not.toHaveBeenCalled();
+            });
+
+            it('returns the stored order_id from the existing Order on a replayed request', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
+                const { service } = buildPaymentService({ seatIds, existingOrder });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result.order_id).toBe(ORDER_ID);
+            });
+
+            it('returns the stored client_secret from the existing Order on a replayed request', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
+                const { service } = buildPaymentService({ seatIds, existingOrder });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result.client_secret).toBe(STRIPE_CLIENT_SECRET);
+            });
+
+            it('proceeds to create a new payment intent when no existing Order is found', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds, existingOrder: null });
+
+                await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(paymentIntentsCreateMock).toHaveBeenCalled();
+            });
+        });
+
+        describe('exception cases', () => {
+            it('propagates unexpected errors thrown during the idempotency DB lookup', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, prismaMock } = buildPaymentService({ seatIds });
+
+                prismaMock.order.findFirst.mockRejectedValue(new Error('DB connection lost'));
+
+                await expect(
+                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // 5. Stripe payment intent creation
+    // =========================================================================
+
+    describe('stripe payment intent creation', () => {
+
+        describe('equivalence cases', () => {
+            it('creates a Stripe payment intent on the happy path', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds });
+
+                await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(paymentIntentsCreateMock).toHaveBeenCalled();
+            });
+        });
+
+        describe('exception cases', () => {
+            it('propagates unexpected errors thrown by Stripe', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({
+                    seatIds,
+                    stripeError: new Error('Stripe API unavailable'),
+                });
+
+                await expect(
+                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // 6. Order and OrderSeat persistence
+    // =========================================================================
+
+    describe('order persistence', () => {
+
+        describe('equivalence cases', () => {
+            it('creates an Order row in the database after a successful Stripe response', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service, prismaMock } = buildPaymentService({ seatIds });
+
+                await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(prismaMock.order.create).toHaveBeenCalled();
+            });
+
+            it('creates OrderSeat rows for every seat id in the token', async () => {
+                const seatIds = makeSeatIds(3);
+                const token = makeValidToken(seatIds);
+                const { service, prismaMock } = buildPaymentService({ seatIds });
+
+                await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(prismaMock.orderSeat.createMany).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        data: expect.arrayContaining(
+                            seatIds.map(id => expect.objectContaining({ seat_id: id })),
+                        ),
+                    }),
+                );
+            });
+        });
+
+        describe('exception cases', () => {
+            it('propagates unexpected errors thrown while persisting the Order row', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({
+                    seatIds,
+                    dbWriteError: new Error('DB write timeout'),
+                });
+
+                await expect(
+                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY),
+                ).rejects.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // 7. Return value contract
+    // =========================================================================
+
+    describe('return value — success', () => {
+
+        describe('equivalence cases', () => {
+            it('returns an object with client_secret and order_id on the happy path', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+            });
+
+            it('returns a non-empty client_secret string', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(typeof result.client_secret).toBe('string');
+                expect(result.client_secret.length).toBeGreaterThan(0);
+            });
+
+            it('returns a non-empty order_id string', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(typeof result.order_id).toBe('string');
+                expect(result.order_id.length).toBeGreaterThan(0);
+            });
+
+            it('returns the Stripe client_secret from the payment intent', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result.client_secret).toBe(STRIPE_CLIENT_SECRET);
+            });
+
+            it('returns the order_id of the newly created Order row', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result.order_id).toBe(ORDER_ID);
+            });
+        });
+
+        describe('boundary cases', () => {
+            it('returns successfully when the token contains only a single seat', async () => {
+                const seatIds = makeSeatIds(1);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+            });
+
+            it(`returns successfully when the token contains the maximum (${MAX_SEATS}) seats`, async () => {
+                const seatIds = makeSeatIds(MAX_SEATS);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+
+                expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
+            });
+        });
+    });
+
+    describe('return value — failure', () => {
+
+        describe('equivalence cases', () => {
+            it('throws ResourceNotFoundError when a required parameter is missing', async () => {
+                const { service } = buildPaymentService();
+
+                try {
+                    await service.createPaymentIntent('', USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ResourceNotFoundError);
+                }
+            });
+
+            it('throws ForbiddenError when the token cannot be verified', async () => {
+                const { service } = buildPaymentService();
+
+                try {
+                    await service.createPaymentIntent('invalid.token.value', USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(ForbiddenError);
+                }
+            });
+
+            it('throws SeatConflictError when Redis locks are not valid for the requesting user', async () => {
+                const seatIds = makeSeatIds(2);
+                const token = makeValidToken(seatIds);
+                const { service } = buildPaymentService({ seatIds, lockState: 'missing' });
+
+                try {
+                    await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
+                } catch (error) {
+                    expect(error).toBeInstanceOf(SeatConflictError);
                 }
             });
         });
