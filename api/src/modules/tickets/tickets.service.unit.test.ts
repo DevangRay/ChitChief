@@ -22,7 +22,7 @@
  *  - Error propagation: DB and Redis throw unexpected errors
  *  - Return value shape and token content
  */
-import 'dotenv/config';
+// import 'dotenv/config';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
 import { SeatStatus } from '@prisma/client';
@@ -56,6 +56,21 @@ const EXPECTED_SUCCESS_RETURN_OBJECT =
     expires_at: expect.any(Number),
     expires_at_string: expect.any(String)
 };
+
+const paymentIntentsCreateMock = vi.fn().mockResolvedValue({
+    id: STRIPE_PAYMENT_INTENT_ID,
+    client_secret: STRIPE_CLIENT_SECRET,
+});
+
+vi.mock('stripe', () => {
+    return {
+        default: vi.fn().mockImplementation(() => ({
+            paymentIntents: {
+                create: paymentIntentsCreateMock,
+            },
+        })),
+    };
+});
 // ─────────────────────────────────────────────────────────────────────────────
 // Seed helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,22 +179,23 @@ const buildPaymentService = ({
         }
     };
 
-    const paymentIntentsCreateMock = stripeError
-        ? vi.fn().mockRejectedValue(stripeError)
-        : vi.fn().mockResolvedValue({ client_secret: STRIPE_CLIENT_SECRET });
+    // const paymentIntentsCreateMock = stripeError
+    //     ? vi.fn().mockRejectedValue(stripeError)
+    //     : vi.fn().mockResolvedValue({ client_secret: STRIPE_CLIENT_SECRET });
 
-    vi.doMock('stripe', () => ({
-        // Stripe is a class — mock the constructor to return our stub instance.
-        default: vi.fn().mockImplementation(() => ({
-            paymentIntents: {
-                create: paymentIntentsCreateMock,
-            },
-        })),
-    }));
+    // vi.doMock('stripe', () => ({
+    //     // Stripe is a class — mock the constructor to return our stub instance.
+    //     default: vi.fn().mockImplementation(() => ({
+    //         paymentIntents: {
+    //             create: paymentIntentsCreateMock,
+    //         },
+    //     })),
+    // }));
+
 
     const service = new TicketService(redisMock as any, prismaMock as any);
 
-    return { service, redisMock, prismaMock, paymentIntentsCreateMock };
+    return { service, redisMock, prismaMock };
 }
 /**
  * Create a Redis mock.
@@ -996,7 +1012,9 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 let callCount = 0;
                 redisMock.get.mockImplementation(() => {
                     callCount++;
-                    return Promise.resolve(callCount === 1 ? USER_ID : null);
+                    return callCount === 1
+                        ? Promise.resolve(USER_ID)
+                        : Promise.resolve(null);
                 });
 
                 try {
@@ -1051,7 +1069,11 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const seatIds = makeSeatIds(2);
                 const token = makeValidToken(seatIds);
                 const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
-                const { service, paymentIntentsCreateMock } = buildPaymentService({
+                // const { service, paymentIntentsCreateMock } = buildPaymentService({
+                //     seatIds,
+                //     existingOrder,
+                // });
+                const { service } = buildPaymentService({
                     seatIds,
                     existingOrder,
                 });
@@ -1088,7 +1110,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
             it('proceeds to create a new payment intent when no existing Order is found', async () => {
                 const seatIds = makeSeatIds(2);
                 const token = makeValidToken(seatIds);
-                const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds, existingOrder: null });
+                // const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds, existingOrder: null });
+                const { service } = buildPaymentService({ seatIds, existingOrder: null });
 
                 await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
 
@@ -1121,7 +1144,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
             it('creates a Stripe payment intent on the happy path', async () => {
                 const seatIds = makeSeatIds(2);
                 const token = makeValidToken(seatIds);
-                const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds });
+                // const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds });
+                const { service } = buildPaymentService({ seatIds });
 
                 await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
 
@@ -1137,6 +1161,9 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                     seatIds,
                     stripeError: new Error('Stripe API unavailable'),
                 });
+                paymentIntentsCreateMock.mockRejectedValueOnce(
+                    new Error('Stripe API unavailable')
+                );
 
                 await expect(
                     service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY),
