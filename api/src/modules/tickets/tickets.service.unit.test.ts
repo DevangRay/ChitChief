@@ -25,7 +25,7 @@
 // import 'dotenv/config';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
-import { SeatStatus } from '@prisma/client';
+import { OrderStatus, SeatStatus } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import { seatLockFromId } from '../../lib/redis-keys';
 import SeatConflictError from '../../lib/custom_errors/SeatConflictError';
@@ -1057,11 +1057,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
             it('returns the existing order immediately when an Order with the same idempotency_key and user_uuid already exists', async () => {
                 const seatIds = makeSeatIds(2);
                 const token = makeValidToken(seatIds);
-                const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
-                // const { service, paymentIntentsCreateMock } = buildPaymentService({
-                //     seatIds,
-                //     existingOrder,
-                // });
+                const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.PENDING };
                 const { service } = buildPaymentService({
                     seatIds,
                     existingOrder,
