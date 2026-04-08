@@ -7,6 +7,7 @@ import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
+import ConflictError from "../../lib/custom_errors/ConflictError";
 
 type SigningObject = {
     seat_ids: string[],
@@ -235,6 +236,7 @@ export class TicketService {
         console.log(`[createPaymentIntent] All Redis keys are valid`)
 
         // check if idempotency key exists (meaning order already created)
+        // idempotency key should be connected to a PENDING order, if not need to provide another
         console.log(`[createPaymentIntent] Querying for existing idempotency key.`)
         const potential_order_status = await this.prisma.order.findUnique({
             where: {
@@ -246,13 +248,20 @@ export class TicketService {
             }
         })
         console.log(`[createPaymentIntent] Found result:`, potential_order_status)
-        if (potential_order_status) {
+
+        if (potential_order_status?.order_status === OrderStatus.PENDING) {
             return {
                 client_secret: potential_order_status.stripe_payment_info.client_secret,
                 order_id: potential_order_status.id
             }
+        } else if (potential_order_status?.order_status === OrderStatus.CONFIRMED) {
+            // order is done
+            throw new ConflictError("Order already completed this order.");
+        } else if (potential_order_status?.order_status === OrderStatus.FAILED || potential_order_status?.order_status === OrderStatus.EXPIRED) {
+            // order was not succesful or TTL passed. Lock exists but order failed.
+            throw new ConflictError("New idempotency key is required.");
         } else {
-            console.log(`[createPaymentIntent] No Order exists. Need to create.`)
+            console.log(`[createPaymentIntent] No Order exists. Need to create. Continuing...`);
         }
 
         // get total price from keys
@@ -282,6 +291,8 @@ export class TicketService {
             receipt_email: 'devangray624+stripetest@gmail.com',
             statement_descriptor: 'Statement Descriptor',
             statement_descriptor_suffix: 'SDS'
+        }, {
+            idempotencyKey: idempotency_key
         })
         console.log(`[createPaymentIntent] Payment Intent created:`, payment_intent);
 
