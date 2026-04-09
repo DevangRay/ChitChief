@@ -236,7 +236,9 @@ export class TicketService {
         console.log(`[createPaymentIntent] All Redis keys are valid`)
 
         // check if idempotency key exists (meaning order already created)
-        // idempotency key should be connected to a PENDING order, if not need to provide another
+        // the same idempotency key is used in case of network error/5xx meaning the use-case is to be added to immediately subsequent requests
+        // if idempotency key of EXPIRED/FAILED order is passed, this is a bug warranting an error
+        // if PENDING/CONFIRMED the user can get the normal 200 response
         console.log(`[createPaymentIntent] Querying for existing idempotency key.`)
         const potential_order_status = await this.prisma.order.findUnique({
             where: {
@@ -249,14 +251,11 @@ export class TicketService {
         })
         console.log(`[createPaymentIntent] Found result:`, potential_order_status)
 
-        if (potential_order_status?.order_status === OrderStatus.PENDING) {
+        if (potential_order_status?.order_status === OrderStatus.PENDING || potential_order_status?.order_status === OrderStatus.CONFIRMED) {
             return {
                 client_secret: potential_order_status.stripe_payment_info.client_secret,
                 order_id: potential_order_status.id
             }
-        } else if (potential_order_status?.order_status === OrderStatus.CONFIRMED) {
-            // order is done
-            throw new ConflictError("Order already completed this order.");
         } else if (potential_order_status?.order_status === OrderStatus.FAILED || potential_order_status?.order_status === OrderStatus.EXPIRED) {
             // order was not succesful or TTL passed. Lock exists but order failed.
             throw new ConflictError("New idempotency key is required.");
