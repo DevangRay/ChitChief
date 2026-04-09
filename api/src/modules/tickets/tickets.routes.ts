@@ -15,6 +15,10 @@ type PaymentIntentRequestBody = {
     user_uuid: string,
     idempotency_key: string
 }
+type ConfirmPaymentRequestBody = {
+    client_secret: string,
+    user_uuid: string
+}
 
 // MAX_RETRIES > 0 (otherwise /reserve will auto return 500)
 const MAX_RETRIES = 3;
@@ -22,11 +26,11 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
     const service = new TicketService(fastify.redis, fastify.prisma);
 
     fastify.post('/reserve', { schema: reserveTicketSchema }, async (request, reply) => {
-        const request_body = request.body as ReserveTicketRequestBody;
-        const seat_ids = request_body.seat_ids;
-        const user_uuid = request_body.user_uuid;
-
         try {
+            const request_body = request.body as ReserveTicketRequestBody;
+            const seat_ids = request_body.seat_ids;
+            const user_uuid = request_body.user_uuid;
+
             // add retry jitter -> catch case where multiple requests come in at same time for same seats, and all get through redis lock check before locks are set
             let attempt_error: Error | undefined;
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -71,15 +75,24 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             fastify.log.error(error, '[GET /reserve] Failed to reserve seats');
             return reply.status(500).send({ message: 'Internal server error.' });
         }
-    })
+    });
+
+    fastify.get('/demo/idempotency_key', { schema: getIdempotencyKeyForDemo }, async (request, reply) => {
+        try {
+            const new_idempotency_key = crypto.randomUUID();
+            return reply.status(200).send({ idempotency_key: new_idempotency_key });
+        } catch (error) {
+            return reply.status(500).send({ message: 'Internal server error.' });
+        }
+    });
 
     fastify.post('/payment/intent', { schema: createPaymentIntentSchema }, async (request, reply) => {
-        const request_body = request.body as PaymentIntentRequestBody;
-        const reservation_token = request_body.reservation_token;
-        const user_uuid = request_body.user_uuid;
-        const idempotency_key = request_body.idempotency_key;
-
         try {
+            const request_body = request.body as PaymentIntentRequestBody;
+            const reservation_token = request_body.reservation_token;
+            const user_uuid = request_body.user_uuid;
+            const idempotency_key = request_body.idempotency_key;
+
             const response = await service.createPaymentIntent(reservation_token, user_uuid, idempotency_key);
 
             return reply.status(200).send(response);
@@ -104,14 +117,23 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
                 return reply.status(500).send({ message: 'Internal server error' });
             }
         }
-    })
+    });
 
-    fastify.get('/demo/idempotency_key', { schema: getIdempotencyKeyForDemo }, async (request, reply) => {
+    fastify.post('/payment/confirm', async (request, reply) => {
         try {
-            const new_idempotency_key = crypto.randomUUID();
-            return reply.status(200).send({ idempotency_key: new_idempotency_key });
+            const request_body = request.body as ConfirmPaymentRequestBody;
+            const client_secret = request_body.client_secret;
+            const user_uuid = request_body.user_uuid;
+
+            const response = await service.confirmPayment(client_secret, user_uuid);
+
+            return reply.status(200).send(response)
         } catch (error) {
-            return reply.status(500).send({ message: 'Internal server error.' });
+            const printable_error = (error as Error).message;
+            console.log("[tickets.routes /payment/intent]: Caught error:", printable_error);
+
+            console.log("[tickets.routes /payment/intent]: Unplanned error. Returning.")
+            return reply.status(500).send({ message: 'Internal server error', error: printable_error });
         }
-    })
+    });
 }

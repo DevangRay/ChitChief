@@ -10,6 +10,7 @@ import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
 import ConflictError from "../../lib/custom_errors/ConflictError";
 
 type SigningObject = {
+    redis_locks: string[],
     seat_ids: string[],
     expires_at: number,
     user_uuid: string
@@ -105,21 +106,21 @@ export class TicketService {
             console.log("[reserveSeats] Some seats are not available.");
 
             const available_seat_ids = new Set(seat_statuses.map((s: Seat) => s.id));
-            const unavailable_seats = seats.filter(seat => !available_seat_ids.has(seat));
+            const unavailable_seats = unique_seat_ids.filter(seat => !available_seat_ids.has(seat));
 
             throw new SeatConflictError("Some seats are not available.", unavailable_seats);
         }
         console.log("[reserveSeats] Seats are available.")
 
         // 3. Attempt to acquire locks for all seats. If any lock fails, release all locks and return failure response with conflicting seat ids.
-        const array = Array.from(unique_seat_ids).map((id) => seatLockFromId(id));
+        const redis_array = Array.from(unique_seat_ids).map((id) => seatLockFromId(id));
         const expiration_timestamp = Date.now() + (TTL_TIME_IN_SECONDS * 1000); // current time in seconds + TTL_TIME_IN_SECONDS seconds
-        console.log("[reserveSeats] Attempting to acquire locks for seats:", array);
+        console.log("[reserveSeats] Attempting to acquire locks:", redis_array);
 
         const lua_result: string[] = await this.redis.eval(
             REDIS_LOCK_LUA_SCRIPT,
             unique_seat_ids.length,
-            ...array,
+            ...redis_array,
             user_uuid,
             String(expiration_timestamp)
         ) as string[];
@@ -158,7 +159,7 @@ export class TicketService {
         console.log("[reserveSeats] Enqueuing job to release locks and reset seat statuses after expiration time.");
         await this.reservation_queue.add(
             'expire_seat_reservation',
-            { seat_ids: seats },
+            { seat_ids: unique_seat_ids },
             {
                 delay: TTL_TIME_IN_SECONDS * 1000, // delay in milliseconds
             }
@@ -169,7 +170,8 @@ export class TicketService {
         console.log("[reserveSeats] Generating reservation token to return.");
 
         const signable_payload = {
-            seat_ids: seats,
+            redis_locks: redis_array,
+            seat_ids: unique_seat_ids,
             expires_at: expiration_timestamp,
             user_uuid: user_uuid
         }
@@ -200,40 +202,7 @@ export class TicketService {
         if (!idempotency_key) {
             throw new ResourceNotFoundError("Invalid idempotency key provided.")
         }
-        console.log('[createPaymentIntent] Validation successful for reservation_token and user_uuid.')
-
-        // unsign reservation_token
-        console.log('[createPaymentIntent] Retrieving payload from JWT reservation token.')
-        let payload = null as SigningObject;
-        try {
-            payload = jwt.verify(reservation_token, process.env.SIGNING_SECRET!) as SigningObject;
-            if (!payload || payload.user_uuid !== user_uuid) {
-                throw new ForbiddenError("Reservation token is not associated with this User.");
-            }
-        } catch (error) {
-            if (error instanceof Error && error.name === 'TokenExpiredError') {
-                console.log("Token has expired");
-                throw new ForbiddenError("Token has expired.")
-            } else {
-                throw new ForbiddenError("Invalid Reservation Token.");
-            }
-        }
-        console.log(`[createPaymentIntent] Retrieved payload: (${payload})`)
-
-        // verify the redis locks on seat are owned by user
-        console.log(`[createPaymentIntent] Verifying Redis locks on all seats tied to calling User`)
-        const conflict_seat_ids = []
-        for (const seat of payload.seat_ids) {
-            const seat_lock = seatLockFromId(seat);
-            const redis_key = await this.redis.get(seat_lock);
-            if (!redis_key || redis_key !== user_uuid) {
-                conflict_seat_ids.push(seat);
-            }
-        }
-        if (conflict_seat_ids.length > 0) {
-            throw new SeatConflictError("Temporary lock on some Seats have expired.", conflict_seat_ids)
-        }
-        console.log(`[createPaymentIntent] All Redis keys are valid`)
+        console.log('[createPaymentIntent] Validation successful for parameters.')
 
         // check if idempotency key exists (meaning order already created)
         // the same idempotency key is used in case of network error/5xx meaning the use-case is to be added to immediately subsequent requests
@@ -262,6 +231,38 @@ export class TicketService {
         } else {
             console.log(`[createPaymentIntent] No Order exists. Need to create. Continuing...`);
         }
+
+        // unsign reservation_token
+        console.log('[createPaymentIntent] Retrieving payload from JWT reservation token.')
+        let payload = null as SigningObject;
+        try {
+            payload = jwt.verify(reservation_token, process.env.SIGNING_SECRET!) as SigningObject;
+            if (!payload || payload.user_uuid !== user_uuid) {
+                throw new ForbiddenError("Reservation token is not associated with this User.");
+            }
+        } catch (error) {
+            if (error instanceof Error && error.name === 'TokenExpiredError') {
+                console.log("Token has expired");
+                throw new ForbiddenError("Token has expired.")
+            } else {
+                throw new ForbiddenError("Invalid Reservation Token.");
+            }
+        }
+        console.log(`[createPaymentIntent] Retrieved payload: (${payload})`)
+
+        // verify the redis locks on seat are owned by user
+        console.log(`[createPaymentIntent] Verifying Redis locks on all seats tied to calling User`)
+        const conflict_seat_ids = []
+        for (const lock of payload.redis_locks) {
+            const redis_key = await this.redis.get(lock);
+            if (!redis_key || redis_key !== user_uuid) {
+                conflict_seat_ids.push(seatIdFromLock(lock));
+            }
+        }
+        if (conflict_seat_ids.length > 0) {
+            throw new SeatConflictError("Temporary lock on some Seats have expired.", conflict_seat_ids)
+        }
+        console.log(`[createPaymentIntent] All Redis keys are valid`)
 
         // get total price from keys
         console.log(`[createPaymentIntent] Building billable price`)
@@ -346,5 +347,19 @@ export class TicketService {
             client_secret: payment_intent.client_secret,
             order_id: created_order_id
         }
+    }
+
+    async confirmPayment(client_secret: string, user_uuid: string) {
+        // validate params
+        console.log('[confirmPayment] Validating input.')
+        if (!client_secret) {
+            throw new ResourceNotFoundError("Invalid client secret provided.");
+        }
+        console.log('[confirmPayment] Validation successful for parameters.')
+        // check redis lock
+        // confirm payment
+        // update seats
+        // update orders
+        // return
     }
 }

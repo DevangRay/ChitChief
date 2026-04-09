@@ -50,6 +50,26 @@ export const reserveTicketSchema: FastifySchema = {
     }
 }
 
+// GET /demo/idempotency_key
+export const getIdempotencyKeyForDemo: FastifySchema = {
+    response: {
+        200: {
+            description: "Example Idempotency Key was generated successfully.",
+            type: "object",
+            properties: {
+                idempotency_key: { type: "string" }
+            }
+        },
+        500: {
+            description: "Internal server error.",
+            type: "object",
+            properties: {
+                message: { type: "string" }
+            }
+        }
+    }
+}
+
 // POST /reserve
 export const createPaymentIntentSchema: FastifySchema = {
     body: {
@@ -115,23 +135,3 @@ export const createPaymentIntentSchema: FastifySchema = {
         }
     }
 }
-
-// GET /demo/idempotency_key
-export const getIdempotencyKeyForDemo: FastifySchema = {
-    response: {
-        200: {
-            description: "Example Idempotency Key was generated successfully.",
-            type: "object",
-            properties: {
-                idempotency_key: { type: "string" }
-            }
-        },
-        500: {
-            description: "Internal server error.",
-            type: "object",
-            properties: {
-                message: { type: "string" }
-            }
-        }
-    }
-} 
