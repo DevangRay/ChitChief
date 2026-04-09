@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { TicketService } from "./tickets.service";
-import { createPaymentIntentSchema, reserveTicketSchema } from "./tickets.schema";
+import { reserveTicketSchema, createPaymentIntentSchema, getIdempotencyKeyForDemo } from "./tickets.schema";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
@@ -106,7 +106,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         }
     })
 
-    fastify.get('/idempotency_key', async (request, reply) => {
+    fastify.get('/demo/idempotency_key', { schema: getIdempotencyKeyForDemo }, async (request, reply) => {
         try {
             const new_idempotency_key = crypto.randomUUID();
             return reply.status(200).send({ idempotency_key: new_idempotency_key });
