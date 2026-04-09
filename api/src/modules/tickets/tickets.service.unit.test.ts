@@ -82,6 +82,9 @@ vi.mock('stripe', () => {
 const makeSeatIds = (n: number, prefix = 'seat-uuid-'): string[] =>
     Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`);
 
+const makeSeatLockIds = (n: number, lock_prefix = 'lock:seat:', seat_prefix = 'seat-uuid-'): string[] =>
+    Array.from({ length: n }, (_, i) => `${lock_prefix}${seat_prefix}${i + 1}`);
+
 /** Build an array of Prisma Seat records (AVAILABLE by default). */
 const makeAvailableSeats = (ids: string[]) =>
     ids.map((id, i) => ({
@@ -95,12 +98,14 @@ const makeAvailableSeats = (ids: string[]) =>
 
 const makeValidToken = (
     seatIds: string[],
+    redis_locks: string[],
     userId: string = USER_ID,
     expiresInSeconds = 600,
 ): string =>
     jwt.sign(
         {
             seat_ids: seatIds,
+            redis_locks: redis_locks,
             user_uuid: userId,
             expires_at: Date.now() + expiresInSeconds * 1000,
         },
@@ -108,10 +113,11 @@ const makeValidToken = (
         { expiresIn: expiresInSeconds },
     );
 
-const makeExpiredToken = (seatIds: string[], userId: string = USER_ID): string =>
+const makeExpiredToken = (seatIds: string[], redis_locks: string[], userId: string = USER_ID): string =>
     jwt.sign(
         {
             seat_ids: seatIds,
+            redis_locks: redis_locks,
             user_uuid: userId,
             expires_at: Date.now() - 1000,
         },
@@ -140,7 +146,6 @@ const buildPaymentService = ({
     seatIds = makeSeatIds(2),
     lockState = 'valid' as LockState,
     existingOrder = null as null | { id: string; client_secret: string },
-    stripeError = undefined as Error | undefined,
     dbWriteError = undefined as Error | undefined,
     tokenUserId = USER_ID,
 } = {}) => {
@@ -765,7 +770,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases — valid input', () => {
             it('succeeds for a standard valid request', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -801,7 +807,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ResourceNotFoundError when user_uuid is an empty string', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -813,7 +820,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ResourceNotFoundError when user_uuid is null', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -825,7 +833,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ResourceNotFoundError when user_uuid is undefined', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -837,7 +846,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ResourceNotFoundError when idempotency_key is an empty string', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -849,7 +859,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ResourceNotFoundError when idempotency_key is null', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -861,7 +872,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ResourceNotFoundError when idempotency_key is undefined', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -882,7 +894,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases', () => {
             it('succeeds when the token is valid and signed with the correct secret', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -920,7 +933,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('boundary cases', () => {
             it('throws ForbiddenError when the token is expired', async () => {
                 const seatIds = makeSeatIds(2);
-                const expiredToken = makeExpiredToken(seatIds);
+                const seatLocks = makeSeatLockIds(2)
+                const expiredToken = makeExpiredToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 try {
@@ -932,8 +946,9 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws ForbiddenError when the user_uuid does not match the subject encoded in the token', async () => {
                 const seatIds = makeSeatIds(2);
+                const seatLocks = makeSeatLockIds(2);
                 // Token is signed for a different user than the one passed into the function
-                const token = makeValidToken(seatIds, 'other-user-uuid');
+                const token = makeValidToken(seatIds, seatLocks, 'other-user-uuid');
                 const { service } = buildPaymentService({ seatIds, tokenUserId: 'other-user-uuid' });
 
                 try {
@@ -954,7 +969,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases', () => {
             it('succeeds when a valid lock exists for every seat in the token and is owned by the requesting user', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds, lockState: 'valid' });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -964,7 +980,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws SeatConflictError when no Redis lock exists for a seat in the token', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds, lockState: 'missing' });
 
                 try {
@@ -976,7 +993,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws SeatConflictError when the lock exists but is owned by a different user', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds, lockState: 'wrong-owner' });
 
                 try {
@@ -995,7 +1013,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                  * specific key and the correct owner for all others.
                  */
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service, redisMock } = buildPaymentService({ seatIds, lockState: 'valid' });
 
                 let callCount = 0;
@@ -1015,7 +1034,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws SeatConflictError when at least one seat lock belongs to a different user', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service, redisMock } = buildPaymentService({ seatIds, lockState: 'valid' });
 
                 let callCount = 0;
@@ -1035,7 +1055,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('exception cases', () => {
             it('propagates unexpected errors thrown by the Redis lock check', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service, redisMock } = buildPaymentService({ seatIds });
 
                 redisMock.get.mockRejectedValue(new Error('Redis connection refused'));
@@ -1056,7 +1077,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases', () => {
             it('returns the existing order immediately when an Order with the same idempotency_key and user_uuid already exists', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.PENDING };
                 const { service } = buildPaymentService({
                     seatIds,
@@ -1072,7 +1094,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('returns the stored order_id from the existing Order on a replayed request', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
                 const { service } = buildPaymentService({ seatIds, existingOrder });
 
@@ -1083,7 +1106,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('returns the stored client_secret from the existing Order on a replayed request', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const existingOrder = { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET };
                 const { service } = buildPaymentService({ seatIds, existingOrder });
 
@@ -1094,7 +1118,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('proceeds to create a new payment intent when no existing Order is found', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 // const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds, existingOrder: null });
                 const { service } = buildPaymentService({ seatIds, existingOrder: null });
 
@@ -1107,7 +1132,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('exception cases', () => {
             it('propagates unexpected errors thrown during the idempotency DB lookup', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service, prismaMock } = buildPaymentService({ seatIds });
 
                 prismaMock.order.findUnique.mockRejectedValue(new Error('DB connection lost'));
@@ -1128,7 +1154,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases', () => {
             it('creates a Stripe payment intent on the happy path', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 // const { service, paymentIntentsCreateMock } = buildPaymentService({ seatIds });
                 const { service } = buildPaymentService({ seatIds });
 
@@ -1141,10 +1168,10 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('exception cases', () => {
             it('propagates unexpected errors thrown by Stripe', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({
-                    seatIds,
-                    stripeError: new Error('Stripe API unavailable'),
+                    seatIds
                 });
                 paymentIntentsCreateMock.mockRejectedValueOnce(
                     new Error('Stripe API unavailable')
@@ -1166,7 +1193,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases', () => {
             it('creates an Order row in the database after a successful Stripe response', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service, prismaMock } = buildPaymentService({ seatIds });
 
                 await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1176,7 +1204,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('creates OrderSeat rows for every seat id in the token', async () => {
                 const seatIds = makeSeatIds(3);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(3);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service, prismaMock } = buildPaymentService({ seatIds });
 
                 await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1194,7 +1223,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('exception cases', () => {
             it('propagates unexpected errors thrown while persisting the Order row', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({
                     seatIds,
                     dbWriteError: new Error('DB write timeout'),
@@ -1216,7 +1246,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('equivalence cases', () => {
             it('returns an object with client_secret and order_id on the happy path', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1226,7 +1257,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('returns a non-empty client_secret string', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1237,7 +1269,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('returns a non-empty order_id string', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1248,7 +1281,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('returns the Stripe client_secret from the payment intent', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1258,7 +1292,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('returns the order_id of the newly created Order row', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1270,7 +1305,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
         describe('boundary cases', () => {
             it('returns successfully when the token contains only a single seat', async () => {
                 const seatIds = makeSeatIds(1);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(1);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1280,7 +1316,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it(`returns successfully when the token contains the maximum (${MAX_SEATS}) seats`, async () => {
                 const seatIds = makeSeatIds(MAX_SEATS);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(MAX_SEATS);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY);
@@ -1315,7 +1352,8 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
             it('throws SeatConflictError when Redis locks are not valid for the requesting user', async () => {
                 const seatIds = makeSeatIds(2);
-                const token = makeValidToken(seatIds);
+                const seatLocks = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, seatLocks);
                 const { service } = buildPaymentService({ seatIds, lockState: 'missing' });
 
                 try {
