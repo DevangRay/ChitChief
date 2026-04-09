@@ -22,7 +22,6 @@
  *  - Error propagation: DB and Redis throw unexpected errors
  *  - Return value shape and token content
  */
-// import 'dotenv/config';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TicketService } from './tickets.service';
 import { OrderStatus, SeatStatus } from '@prisma/client';
