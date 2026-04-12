@@ -1,4 +1,5 @@
 import { FastifySchema } from "fastify";
+import { PaymentMethod } from "../../lib/payment-method";
 
 // POST /reserve
 export const reserveTicketSchema: FastifySchema = {
@@ -74,7 +75,7 @@ export const getIdempotencyKeyForDemo: FastifySchema = {
 export const createPaymentIntentSchema: FastifySchema = {
     body: {
         type: "object",
-        required: ["reservation_token", "user_uuid", "idempotency_key"],
+        required: ["reservation_token", "user_uuid", "idempotency_key", "payment_method"],
         properties: {
             reservation_token: {
                 type: "string",
@@ -88,6 +89,10 @@ export const createPaymentIntentSchema: FastifySchema = {
             idempotency_key: {
                 type: "string",
                 description: "Unique Idempotency Key"
+            },
+            payment_method: {
+                type: "string",
+                enum: Object.keys(PaymentMethod)
             }
         }
     },

@@ -4,6 +4,7 @@ import * as jwt from 'jsonwebtoken';
 import Redis from "ioredis";
 import Stripe from 'stripe';
 import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
+import { getStripePaymentMethodFromEnum, PaymentMethod } from "../../lib/payment-method";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
@@ -190,7 +191,7 @@ export class TicketService {
         }
     }
 
-    async createPaymentIntent(reservation_token: string, user_uuid: string, idempotency_key: string) {
+    async createPaymentIntent(reservation_token: string, user_uuid: string, idempotency_key: string, payment_method: PaymentMethod) {
         // validate input
         console.log('[createPaymentIntent] Validating input.')
         if (!reservation_token) {
@@ -282,15 +283,19 @@ export class TicketService {
         //      call needs private key, price, currency, 
         //      optional: description, receipt email, statement description, 
         console.log(`[createPaymentIntent] Creating Payment Intent`)
-        // const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY!);
         const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
+
         const payment_intent = await stripe.paymentIntents.create({
             amount: total_price,
             currency: 'usd',
             description: 'Testing PaymentIntent for Seats',
+            // @TODO -- update email to connect to user email.
             receipt_email: 'devangray624+stripetest@gmail.com',
             statement_descriptor: 'Statement Descriptor',
-            statement_descriptor_suffix: 'SDS'
+            statement_descriptor_suffix: 'SDS',
+            payment_method: getStripePaymentMethodFromEnum(payment_method),
+            confirm: true,
+            return_url: "https://devangray.dev/"
         }, {
             idempotencyKey: idempotency_key
         })

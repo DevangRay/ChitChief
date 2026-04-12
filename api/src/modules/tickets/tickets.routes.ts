@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { TicketService } from "./tickets.service";
 import { reserveTicketSchema, createPaymentIntentSchema, getIdempotencyKeyForDemo } from "./tickets.schema";
+import { PaymentMethod } from "../../lib/payment-method";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
@@ -13,11 +14,13 @@ type ReserveTicketRequestBody = {
 type PaymentIntentRequestBody = {
     reservation_token: string,
     user_uuid: string,
-    idempotency_key: string
+    idempotency_key: string,
+    payment_method: PaymentMethod
 }
 type ConfirmPaymentRequestBody = {
-    client_secret: string,
-    user_uuid: string
+    reservation_token: string,
+    user_uuid: string,
+    order_id: string
 }
 
 // MAX_RETRIES > 0 (otherwise /reserve will auto return 500)
@@ -92,8 +95,9 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             const reservation_token = request_body.reservation_token;
             const user_uuid = request_body.user_uuid;
             const idempotency_key = request_body.idempotency_key;
+            const payment_method = request_body.payment_method;
 
-            const response = await service.createPaymentIntent(reservation_token, user_uuid, idempotency_key);
+            const response = await service.createPaymentIntent(reservation_token, user_uuid, idempotency_key, payment_method);
 
             return reply.status(200).send(response);
         } catch (error) {
