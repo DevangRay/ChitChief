@@ -4,27 +4,26 @@
     // File Layout
     "rootDir": "./src",
     "outDir": "./dist",
-
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
-    "module": "commonjs",
-    // "moduleResolution": "node",
+    "module": "node16",
+    "moduleResolution": "node16",
     "target": "ES2022",
-    
     // For nodejs:
-    "lib": ["ES2022"],
-    "types": ["node"],
+    "lib": [
+      "ES2022"
+    ],
+    "types": [
+      "node"
+    ],
     // and npm install -D @types/node
-
     // Other Outputs
     "sourceMap": true,
     // "declaration": true,
     // "declarationMap": true,
-
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-
     // Style Options
     // "noImplicitReturns": true,
     // "noImplicitOverride": true,
@@ -32,7 +31,6 @@
     // "noUnusedParameters": true,
     // "noFallthroughCasesInSwitch": true,
     // "noPropertyAccessFromIndexSignature": true,
-
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     // Recommended Options
@@ -43,6 +41,10 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
 }
