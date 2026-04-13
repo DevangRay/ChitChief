@@ -123,7 +123,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
     //     const body_event = request.body;
     //     console.log("body_event:", body_event);
 
-    //     const endpoint_secret = "whsec_30edfc9d92d8972d1b5bd1d688d52e03179168f5e3772cf74a858a2133ecda8e"
+    //     const endpoint_secret = ""
     //     const signature = request.headers['stripe-signature'];
     //     console.log("endpoint_secret:", endpoint_secret)
     //     console.log("signature:", signature)
