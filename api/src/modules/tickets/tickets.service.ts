@@ -289,8 +289,6 @@ export class TicketService {
             amount: total_price,
             currency: 'usd',
             description: 'Testing PaymentIntent for Seats',
-            // @TODO -- update email to connect to user email.
-            receipt_email: 'devangray624+stripetest@gmail.com',
             statement_descriptor: 'Statement Descriptor',
             statement_descriptor_suffix: 'SDS',
             payment_method: getStripePaymentMethodFromEnum(payment_method),
@@ -354,17 +352,89 @@ export class TicketService {
         }
     }
 
-    async confirmPayment(client_secret: string, user_uuid: string) {
-        // validate params
-        console.log('[confirmPayment] Validating input.')
-        if (!client_secret) {
-            throw new ResourceNotFoundError("Invalid client secret provided.");
-        }
-        console.log('[confirmPayment] Validation successful for parameters.')
-        // check redis lock
-        // confirm payment
-        // update seats
-        // update orders
-        // return
+    async confirmPayment(reservation_token: string, user_uuid: string, order_id: string) {
+
+        // // validate params
+        // console.log('[confirmPayment] Validating input.')
+        // if (!reservation_token) {
+        //     throw new ResourceNotFoundError("Invalid Reservation Token provided.");
+        // }
+        // if (!user_uuid) {
+        //     throw new ResourceNotFoundError("Invalid User UUID provided.");
+        // }
+        // if (!order_id) {
+        //     throw new ResourceNotFoundError("Invalid Order ID provided.");
+        // }
+        // console.log('[confirmPayment] Validation successful for parameters.')
+
+        // // unsign reservation_token
+        // console.log('[confirmPayment] Retrieving payload from JWT reservation token.')
+        // let payload = null as SigningObject;
+        // try {
+        //     payload = jwt.verify(reservation_token, process.env.SIGNING_SECRET!) as SigningObject;
+        //     if (!payload || payload.user_uuid !== user_uuid) {
+        //         throw new ForbiddenError("Reservation token is not associated with this User.");
+        //     }
+        // } catch (error) {
+        //     if (error instanceof Error && error.name === 'TokenExpiredError') {
+        //         console.log("Token has expired");
+        //         throw new ForbiddenError("Token has expired.")
+        //     } else {
+        //         throw new ForbiddenError("Invalid Reservation Token.");
+        //     }
+        // }
+        // console.log(`[confirmPayment] Retrieved payload:`, payload);
+
+        // // check redis lock
+        // console.log(`[confirmPayment] Verifying Redis locks on all seats tied to calling User`)
+        // const conflict_seat_ids = []
+        // for (const lock of payload.redis_locks) {
+        //     const redis_key = await this.redis.get(lock);
+        //     if (!redis_key || redis_key !== user_uuid) {
+        //         conflict_seat_ids.push(seatIdFromLock(lock));
+        //     }
+        // }
+        // if (conflict_seat_ids.length > 0) {
+        //     throw new SeatConflictError("Temporary lock on some Seats have expired.", conflict_seat_ids)
+        // }
+        // console.log(`[confirmPayment] All Redis keys are valid`)
+
+        // // get payment intent id
+        // console.log(`[confirmPayment] Finding Stripe Payment Info object associated with Order ID`)
+        // // 1-to-1 between Order and StripePaymentInfo
+        // const connected_order = await this.prisma.order.findUnique({
+        //     where: {
+        //         id: order_id
+        //     },
+        //     include: {
+        //         stripe_payment_info: true
+        //     }
+        // })
+        // if (!connected_order) {
+        //     throw new ResourceNotFoundError("Order does not exist");
+        // }
+        // console.log(`[confirmPayment] Found Stripe Payment Info object:`, connected_order)
+
+        // // confirm payment
+        // console.log(`[confirmPayment] Confirming payment intent`)
+        // // console.log("client_secret: ", connected_order.stripe_payment_info.client_secret);
+        // // const stripe = Stripe(process.env.STRIPE_PUBLISHABLE_KEY!);
+        // // const retrieved_payment_intent = await stripe.paymentIntents.retrieve(
+        // //     connected_order.stripe_payment_info.payment_intent_id,
+        // //     {
+        // //         client_secret: connected_order.stripe_payment_info.client_secret,
+        // //     }
+        // // );
+        // // console.log("retrieved_payment_intent", retrieved_payment_intent);
+        // const stripe = Stripe(process.env.STRIPE_SECRET_KEY!)
+        // const confirmed_payment_intent = await stripe.paymentIntents.confirm(
+        //     connected_order.stripe_payment_info.payment_intent_id
+        // )
+        // console.log(`[confirmPayment] Confirmed payment intent:`, confirmed_payment_intent)
+
+        // // update seats
+        // // update orders
+        // // return
+        // return confirmed_payment_intent;
     }
 }

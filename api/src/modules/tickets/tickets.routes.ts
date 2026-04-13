@@ -17,11 +17,6 @@ type PaymentIntentRequestBody = {
     idempotency_key: string,
     payment_method: PaymentMethod
 }
-type ConfirmPaymentRequestBody = {
-    reservation_token: string,
-    user_uuid: string,
-    order_id: string
-}
 
 // MAX_RETRIES > 0 (otherwise /reserve will auto return 500)
 const MAX_RETRIES = 3;
@@ -123,21 +118,31 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         }
     });
 
-    fastify.post('/payment/confirm', async (request, reply) => {
-        try {
-            const request_body = request.body as ConfirmPaymentRequestBody;
-            const client_secret = request_body.client_secret;
-            const user_uuid = request_body.user_uuid;
+    // fastify.post('/payment/confirm', async (request, reply) => {
+    //     console.log("headers:", request.headers)
+    //     const body_event = request.body;
+    //     console.log("body_event:", body_event);
 
-            const response = await service.confirmPayment(client_secret, user_uuid);
+    //     const endpoint_secret = "whsec_30edfc9d92d8972d1b5bd1d688d52e03179168f5e3772cf74a858a2133ecda8e"
+    //     const signature = request.headers['stripe-signature'];
+    //     console.log("endpoint_secret:", endpoint_secret)
+    //     console.log("signature:", signature)
 
-            return reply.status(200).send(response)
-        } catch (error) {
-            const printable_error = (error as Error).message;
-            console.log("[tickets.routes /payment/intent]: Caught error:", printable_error);
+    //     try {
+    //         const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
+    //         const event = stripe.webhooks.constructEvent(
+    //             body_event,
+    //             signature,
+    //             endpoint_secret
+    //         );
 
-            console.log("[tickets.routes /payment/intent]: Unplanned error. Returning.")
-            return reply.status(500).send({ message: 'Internal server error', error: printable_error });
-        }
-    });
+    //         console.log("constructed event:", event);
+    //     } catch(error) {
+    //         console.log("caught error:", error)
+    //         return reply.status(400).send({message: error})
+    //     }
+
+    //     return reply.status(200).send({recieved: true})
+    //     console.log("need to update db");
+    // });
 }
