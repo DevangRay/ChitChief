@@ -5,7 +5,7 @@ import { WebhooksService } from "./webhooks.service";
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
-    const service = new WebhooksService();
+    const service = new WebhooksService(fastify.prisma);
 
     fastify.post('/payment/confirm', async (request, reply) => {
         let event;
@@ -32,7 +32,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         switch (event.type) {
             case "payment_intent.succeeded":
                 // update order
-                const result = await service.handleSuccess();
+                const result = await service.handleSuccess(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.idempotency_key);
                 break;
             default:
                 console.log(`Unhandled event type ${event.type}`);
