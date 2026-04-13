@@ -291,9 +291,15 @@ export class TicketService {
         const payment_intent = await stripe.paymentIntents.create({
             amount: total_price,
             currency: 'usd',
-            description: 'Testing PaymentIntent for Seats',
-            statement_descriptor: 'Statement Descriptor',
-            statement_descriptor_suffix: 'SDS',
+            // @TODO: make this description user-readable
+            description: `Order seats: ${payload.seat_ids}`,
+            metadata: {
+                // could just send reservation_token. Expiration is a problem howerver.
+                idempotency_key: idempotency_key,
+                user_uuid: user_uuid
+            },
+            statement_descriptor: 'ChitChief Seat Purchase',
+            statement_descriptor_suffix: 'ChitChief',
             payment_method: getStripePaymentMethodFromEnum(payment_method),
             confirm: true,
             return_url: "https://devangray.dev/"
