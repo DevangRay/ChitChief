@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { TicketService } from "./tickets.service";
 import { reserveTicketSchema, createPaymentIntentSchema, getIdempotencyKeyForDemo } from "./tickets.schema";
-import { PaymentMethod } from "../../lib/payment-method";
+import { PaymentMethodKey } from "../../lib/payment-method";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
@@ -15,7 +15,7 @@ type PaymentIntentRequestBody = {
     reservation_token: string,
     user_uuid: string,
     idempotency_key: string,
-    payment_method: PaymentMethod
+    payment_method: PaymentMethodKey
 }
 
 // MAX_RETRIES > 0 (otherwise /reserve will auto return 500)

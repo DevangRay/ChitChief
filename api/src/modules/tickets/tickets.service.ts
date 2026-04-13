@@ -4,7 +4,7 @@ import * as jwt from 'jsonwebtoken';
 import Redis from "ioredis";
 import Stripe from 'stripe';
 import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
-import { getStripePaymentMethodFromEnum, PaymentMethod } from "../../lib/payment-method";
+import { getStripePaymentMethodFromEnum, PaymentMethodKey } from "../../lib/payment-method";
 import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
@@ -191,7 +191,7 @@ export class TicketService {
         }
     }
 
-    async createPaymentIntent(reservation_token: string, user_uuid: string, idempotency_key: string, payment_method: PaymentMethod) {
+    async createPaymentIntent(reservation_token: string, user_uuid: string, idempotency_key: string, payment_method: PaymentMethodKey) {
         // validate input
         console.log('[createPaymentIntent] Validating input.')
         if (!reservation_token) {
@@ -202,6 +202,9 @@ export class TicketService {
         }
         if (!idempotency_key) {
             throw new ResourceNotFoundError("Invalid idempotency key provided.")
+        }
+        if (!payment_method) {
+            throw new ResourceNotFoundError("Invalid payment method provided.")
         }
         console.log('[createPaymentIntent] Validation successful for parameters.')
 

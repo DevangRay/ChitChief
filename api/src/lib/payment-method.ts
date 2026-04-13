@@ -1,3 +1,5 @@
+import ForbiddenError from "./custom_errors/ForbiddenError";
+
 export enum PaymentMethod {
     "SUCCESS_VISA" = "pm_card_visa",
     "SUCCESS_VISA_DEBIT" = "pm_card_visa_debit",
@@ -7,6 +9,8 @@ export enum PaymentMethod {
     "FAIL_INSUFFICIENT_FUNDS" = "pm_card_insufficientFunds",
     "FAIL_CUSTOMER_CHARGED" ="pm_card_chargeCustomerFail"
 }
+
+export type PaymentMethodKey = keyof typeof PaymentMethod;
 
 export function getStripePaymentMethodFromEnum(enum_method: string) {
     switch (enum_method) {
@@ -25,6 +29,6 @@ export function getStripePaymentMethodFromEnum(enum_method: string) {
         case "FAIL_CUSTOMER_CHARGED":
             return PaymentMethod.FAIL_CUSTOMER_CHARGED;
         default:
-            throw new Error("Invalid payment method provided.");
+            throw new ForbiddenError("Invalid payment method provided.");
     }
 }
