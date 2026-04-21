@@ -92,9 +92,9 @@ process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
 worker.on('completed', (job) => {
-    console.log(`[worker: ${getDateForLogs()}] Job ${job.id} completed successfully`)
+    console.log(`[worker: ${getDateForLogs()}] Job ${job.id}: "${job.name}" completed successfully`)
 })
 
 worker.on('failed', (job, err) => {
-    console.error(`[worker: ${getDateForLogs()}] Job ${job?.id} failed with error: ${err.message}. Full error:`, err);
+    console.error(`[worker: ${getDateForLogs()}] Job ${job?.id}: ${job?.name ? "${job?.name}" : ''} failed with error: ${err.message}. Full error:`, err);
 })

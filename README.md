@@ -10,9 +10,18 @@
     * `npx prisma generate`
 * Run Prisma seed code
     * `npx prisma db seed`
+* Connect Stripe webhook
+    * `stripe listen --forward-to localhost:3000/webhooks/payment/confirm`
 ---
 DB Schema 
 * https://dbdocs.io/devangray624/ChitChief-DB-Schema
+---
+Limitations
+* For demo purposes I collapsed the PaymentIntent creation and confirmation into a single call : POST /tickets/purchase/intent
+    * In production I would split this up.
+        * POST /tickets/puchase/intent would create the PaymentIntent and return the client_secret.
+        * Client-side would use something like Stripe.js to get payment information and confirm the payment
+    * The webhook POST /ticekts/purchase/confirm still exists to handle orders after confirmation (handling both success and error)
 ---
 Goals
 * Distributed seat locking with Redis + TTL
@@ -155,3 +164,6 @@ Testing
     * real postgres + redis through testcontainers
 * E2E tests
     * full http request through Fastify with Supertest
+---
+Redis
+* "I used a single Redis instance for simplicity, but I'm aware this creates a single point of failure. In production I'd use Redis Cluster or the Redlock algorithm across multiple nodes to ensure lock durability if a node fails mid-operation."
