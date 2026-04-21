@@ -56,7 +56,7 @@ model Seat {
   /// Stored in cents
   price Int
   seat_status SeatStatus @default(AVAILABLE)
-  order_seats OrderSeats?
+  order_seats OrderSeats[]
 
   @@unique([event_id, row, number])
   @@index([event_id, seat_status])
@@ -71,7 +71,7 @@ model Order {
   stripe_payment_info StripePaymentInfo @relation(fields: [stripe_payment_id], references: [id])
   idempotency_key String @unique
   created_at DateTime @default(now())
-  orderseats OrderSeats[]
+  order_seats OrderSeats[]
 
   @@index([user_id, order_status])
   @@index([order_status, created_at])
@@ -81,7 +81,7 @@ model OrderSeats {
   id String @id @default(uuid())
   order_id String
   order Order @relation(fields: [order_id], references: [id])
-  seat_id String @unique
+  seat_id String
   seat Seat @relation(fields: [seat_id], references: [id])
   /// Saving seat price at moment seat is bought
   price_at_purchase Int

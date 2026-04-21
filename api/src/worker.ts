@@ -64,17 +64,43 @@ const worker = new Worker(
                     }
                 });
 
-                await prisma.orderSeats.deleteMany({
-                    where: {
-                        order_id: order_id
-                    }
-                });
-
                 console.log(`[worker: ${getDateForLogs()}] Set Order Status to EXPIRED and Deleted associated Order Seats for Order ID: ${order_id}`);
             } else {
                 console.log(`[worker: ${getDateForLogs()}] Order was already handled: ${order_id}`);
             }
+        } else if (job.name === "reset_successful_orders") {
+            console.log(`[worker: ${getDateForLogs()}] Processing reset_successful_orders job with data:`, job.data);
+            const { order_id } = job.data;
 
+            // revert seat statuses from SOLD back to AVAILABLE
+            const connected_seats = await prisma.orderSeats.findMany({
+                where: {
+                    order_id: order_id
+                }
+            });
+            console.log("connected_seats: ", connected_seats);
+
+            const seat_ids = connected_seats.map((os) => os.seat_id);
+            console.log("seat_ids: ", seat_ids);
+
+            await prisma.seat.updateMany({
+                where: {
+                    id: { in: seat_ids },
+                    seat_status: SeatStatus.SOLD
+                },
+                data: { seat_status: SeatStatus.AVAILABLE }
+            });
+
+            // set order status to EXPIRED
+            await prisma.order.update({
+                where: {
+                    id: order_id,
+                    order_status: OrderStatus.CONFIRMED
+                },
+                data: { order_status: OrderStatus.EXPIRED }
+            });
+
+            console.log(`[worker: ${getDateForLogs()}] Reset Order ${order_id} to EXPIRED, and set ${seat_ids.length} seat(s) to AVAILABLE.`);
         }
     },
     { connection }
@@ -96,5 +122,5 @@ worker.on('completed', (job) => {
 })
 
 worker.on('failed', (job, err) => {
-    console.error(`[worker: ${getDateForLogs()}] Job ${job?.id}: ${job?.name ? "${job?.name}" : ''} failed with error: ${err.message}. Full error:`, err);
+    console.error(`[worker: ${getDateForLogs()}] Job ${job?.id}: ${job?.name ? `"${job?.name}"` : ''} failed with error: ${err.message}. Full error:`, err);
 })
