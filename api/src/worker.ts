@@ -17,11 +17,11 @@ const worker = new Worker(
     'reservations',
     async (job) => {
         if (job.name === 'expire_seat_reservation') {
-            console.log(`[worker: ${getDateForLogs()}] Processing expire_seat_reservation job with data:`, job.data);
+            console.log(`[worker: ${getDateForLogs()} | EXPIRE_SEAT_RESERVATION] Processing expire_seat_reservation job with data:`, job.data);
             const { seat_ids } = job.data;
 
             // set seat_status back to AVAILABLE for all seat_ids in job data
-            await prisma.seat.updateMany({
+            const seat_update_result = await prisma.seat.updateMany({
                 where: {
                     id: {
                         in: seat_ids
@@ -29,9 +29,10 @@ const worker = new Worker(
                     seat_status: SeatStatus.RESERVED
                 },
                 data: {
-                    seat_status: 'AVAILABLE'
+                    seat_status: SeatStatus.AVAILABLE
                 }
             })
+            console.log(`[worker: ${getDateForLogs()} | EXPIRE_SEAT_RESERVATION] Updated ${seat_update_result.count} seat(s) to AVAILABLE`);
 
             // delete redis locks for all seat_ids in job data
             const lock_keys = seat_ids.map((id: string) => seatLockFromId(id));
@@ -42,9 +43,9 @@ const worker = new Worker(
             }
             await multi_chain.exec();
 
-            console.log(`[worker: ${getDateForLogs()}] Released locks and reset seat statuses for seat ids: ${seat_ids.join(', ')}`);
+            console.log(`[worker: ${getDateForLogs()} | EXPIRE_SEAT_RESERVATION] Released locks and reset seat statuses for seat ids: ${seat_ids.join(', ')}`);
         } else if (job.name === 'expire_pending_order') {
-            console.log(`[worker: ${getDateForLogs()}] Processing expire_pending_order job with data:`, job.data);
+            console.log(`[worker: ${getDateForLogs()} | EXPIRE_PENDING_ORDER] Processing expire_pending_order job with data:`, job.data);
             const { order_id } = job.data;
 
             const target_order = await prisma.order.findUnique({
@@ -64,12 +65,12 @@ const worker = new Worker(
                     }
                 });
 
-                console.log(`[worker: ${getDateForLogs()}] Set Order Status to EXPIRED and Deleted associated Order Seats for Order ID: ${order_id}`);
+                console.log(`[worker: ${getDateForLogs()} | EXPIRE_PENDING_ORDER] Set Order Status to EXPIRED and Deleted associated Order Seats for Order ID: ${order_id}`);
             } else {
-                console.log(`[worker: ${getDateForLogs()}] Order was already handled: ${order_id}`);
+                console.log(`[worker: ${getDateForLogs()} | EXPIRE_PENDING_ORDER] Order (${order_id}) was already handled.`);
             }
         } else if (job.name === "reset_successful_orders") {
-            console.log(`[worker: ${getDateForLogs()}] Processing reset_successful_orders job with data:`, job.data);
+            console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Processing reset_successful_orders job with data:`, job.data);
             const { order_id } = job.data;
 
             // revert seat statuses from SOLD back to AVAILABLE
@@ -78,10 +79,9 @@ const worker = new Worker(
                     order_id: order_id
                 }
             });
-            console.log("connected_seats: ", connected_seats);
 
             const seat_ids = connected_seats.map((os) => os.seat_id);
-            console.log("seat_ids: ", seat_ids);
+            console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Updating seat_ids:`, seat_ids);
 
             await prisma.seat.updateMany({
                 where: {
@@ -100,14 +100,14 @@ const worker = new Worker(
                 data: { order_status: OrderStatus.EXPIRED }
             });
 
-            console.log(`[worker: ${getDateForLogs()}] Reset Order ${order_id} to EXPIRED, and set ${seat_ids.length} seat(s) to AVAILABLE.`);
+            console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Reset Order ${order_id} to EXPIRED and set ${seat_ids.length} seat(s) to AVAILABLE.`);
         }
     },
     { connection }
 );
 
 const shutdown = async () => {
-    console.log(`[worker: ${getDateForLogs()}] Shutting down gracefully...`)
+    console.log(`[worker: ${getDateForLogs()} | SHUTDOWN] Shutting down gracefully...`)
     await worker.close()
     await prisma.$disconnect()
     await connection.quit()
@@ -118,9 +118,9 @@ process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
 worker.on('completed', (job) => {
-    console.log(`[worker: ${getDateForLogs()}] Job ${job.id}: "${job.name}" completed successfully`)
+    console.log(`[worker: ${getDateForLogs()} | COMPLETED] Job ${job.id}: "${job.name}" completed successfully`)
 })
 
 worker.on('failed', (job, err) => {
-    console.error(`[worker: ${getDateForLogs()}] Job ${job?.id}: ${job?.name ? `"${job?.name}"` : ''} failed with error: ${err.message}. Full error:`, err);
+    console.error(`[worker: ${getDateForLogs()} | FAILURE] Job ${job?.id}: ${job?.name ? `"${job?.name}"` : ''} failed with error: ${err.message}. Full error:`, err);
 })

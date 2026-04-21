@@ -292,7 +292,7 @@ export class TicketService {
             amount: total_price,
             currency: 'usd',
             // @TODO: make this description user-readable
-            description: `Order seats: ${payload.seat_ids}`,
+            description: `seats: ${payload.seat_ids}`,
             metadata: {
                 // could just send reservation_token. Expiration is a problem howerver.
                 idempotency_key: idempotency_key,
