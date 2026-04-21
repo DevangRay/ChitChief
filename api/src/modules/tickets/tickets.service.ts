@@ -298,7 +298,7 @@ export class TicketService {
                 idempotency_key: idempotency_key,
                 user_uuid: user_uuid
             },
-            statement_descriptor: 'ChitChief Seat Purchase',
+            statement_descriptor: 'ChitChief Seat Order',
             statement_descriptor_suffix: 'ChitChief',
             payment_method: getStripePaymentMethodFromEnum(payment_method),
             confirm: true,
