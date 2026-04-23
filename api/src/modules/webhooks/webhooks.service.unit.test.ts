@@ -58,7 +58,7 @@ const makeSeatIds = (n: number, prefix = 'seat-uuid-'): string[] =>
 const makeOrder = (overrides: Partial<{ id: string; order_status: OrderStatus }> = {}) => ({
     id: ORDER_ID,
     user_id: USER_ID,
-    order_status: OrderStatus.PENDING,
+    order_status: OrderStatus.FAILED,
     idempotency_key: IDEMPOTENCY_KEY,
     ...overrides,
 });
@@ -343,15 +343,13 @@ describe('WebhooksService.handleFailure — behavior', () => {
             expect(updateCall.where.id.in).toEqual(expect.arrayContaining(seatIds));
         });
 
-        it('deletes connected OrderSeats after updating the order', async () => {
+        it('should not delete connected OrderSeats after updating the order', async () => {
             const seatIds = makeSeatIds(2);
             const { service, prismaMock } = buildService({ seatIds });
 
             await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
 
-            expect(prismaMock.orderSeats.deleteMany).toHaveBeenCalledOnce();
-            const deleteCall = prismaMock.orderSeats.deleteMany.mock.calls[0][0];
-            expect(deleteCall.where.order_id).toBe(ORDER_ID);
+            expect(prismaMock.orderSeats.deleteMany).toHaveBeenCalledTimes(0);
         });
     });
 
