@@ -12,7 +12,8 @@ import ConflictError from "../../lib/custom_errors/ConflictError";
 
 type PaymentIntent = {
     id: string | undefined,
-    client_secret: string | undefined
+    client_secret: string | undefined,
+    latest_charge: string | undefined
 } | StripePaymentIntent;
 
 type StripePaymentIntent = Awaited<ReturnType<typeof Stripe.prototype.paymentIntents.create>>;
@@ -327,14 +328,12 @@ export class TicketService {
 
             if (error instanceof Stripe.errors.StripeCardError) {
                 // Catch StripeCardError to retrieve Payment Intent ID and Client Secret to create Order and StripePaymentInfo objects
-                const raw = error.raw as { payment_intent?: { id?: string, client_secret?: string } };
-                console.log("payment_intent id")
-                console.log(raw.payment_intent?.id)
-                console.log("end of payment_intent id")
-
+                const raw = error.raw as { payment_intent?: { id?: string, client_secret?: string, latest_charge?: string } };
+                
                 payment_intent = {
                     id: raw.payment_intent?.id,
-                    client_secret: raw.payment_intent?.client_secret
+                    client_secret: raw.payment_intent?.client_secret,
+                    latest_charge: raw.payment_intent?.latest_charge
                 }
             } else {
                 throw error;
@@ -394,7 +393,13 @@ export class TicketService {
         // return client secret and order ID
         if (payment_failed) {
             console.log(`[createPaymentIntent] Payment failed. Throwing error.`);
-            throw new Error("Card failed.");
+            throw new Stripe.errors.StripeCardError({
+                message: "Your card was declined.",
+                type: "card_error",
+                code: "card_declined",
+                decline_code: "generic_decline",
+                charge: payment_intent.latest_charge as string
+            })
         }
         return {
             client_secret: payment_intent.client_secret,
