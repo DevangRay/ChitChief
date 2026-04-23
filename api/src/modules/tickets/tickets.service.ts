@@ -10,6 +10,13 @@ import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
 import ConflictError from "../../lib/custom_errors/ConflictError";
 
+type PaymentIntent = {
+    id: string | undefined,
+    client_secret: string | undefined
+} | StripePaymentIntent;
+
+type StripePaymentIntent = Awaited<ReturnType<typeof Stripe.prototype.paymentIntents.create>>;
+
 type SigningObject = {
     redis_locks: string[],
     seat_ids: string[],
@@ -252,7 +259,7 @@ export class TicketService {
                 throw new ForbiddenError("Invalid Reservation Token.");
             }
         }
-        console.log(`[createPaymentIntent] Retrieved payload: (${payload})`)
+        console.log(`[createPaymentIntent] Retrieved payload:`, payload)
 
         // verify the redis locks on seat are owned by user
         console.log(`[createPaymentIntent] Verifying Redis locks on all seats tied to calling User`)
@@ -285,30 +292,56 @@ export class TicketService {
         // create payment intent
         //      call needs private key, price, currency, 
         //      optional: description, receipt email, statement description, 
-        console.log(`[createPaymentIntent] Creating Payment Intent`)
+        console.log(`[createPaymentIntent] Creating Payment Intent with payment method: ${getStripePaymentMethodFromEnum(payment_method)}`)
         const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
 
-        const payment_intent = await stripe.paymentIntents.create({
-            amount: total_price,
-            currency: 'usd',
-            // @TODO: make this description user-readable
-            description: `seats: ${payload.seat_ids}`,
-            metadata: {
-                // could just send reservation_token. Expiration is a problem howerver.
-                idempotency_key: idempotency_key,
-                user_uuid: user_uuid
-            },
-            statement_descriptor: 'ChitChief Seat Order',
-            statement_descriptor_suffix: 'ChitChief',
-            payment_method: getStripePaymentMethodFromEnum(payment_method),
-            confirm: true,
-            return_url: "https://devangray.dev/"
-        }, {
-            idempotencyKey: idempotency_key
-        })
-        console.log(`[createPaymentIntent] Payment Intent created:`, payment_intent);
+        let payment_intent: PaymentIntent;
+        let payment_failed: Boolean = false;
+        try {
+            payment_intent = await stripe.paymentIntents.create({
+                amount: total_price,
+                currency: 'usd',
+                // @TODO: make this description user-readable
+                description: `seats: ${payload.seat_ids}`,
+                metadata: {
+                    // could just send reservation_token. Expiration is a problem howerver.
+                    idempotency_key: idempotency_key,
+                    user_uuid: user_uuid
+                },
+                statement_descriptor: 'ChitChief Seat Order',
+                statement_descriptor_suffix: 'ChitChief',
+                payment_method: getStripePaymentMethodFromEnum(payment_method),
+                confirm: true,
+                return_url: "https://devangray.dev/"
+            }, {
+                idempotencyKey: idempotency_key
+            })
+            console.log(`[createPaymentIntent] Payment Intent created:`, payment_intent);
+        } catch (error) {
+            console.log(`[createPaymentIntent] Payment failed.`);
+            payment_failed = true;
+            
+            if (error instanceof Stripe.errors.StripeCardError) {
+                // Catch StripeCardError to retrieve Payment Intent ID and Client Secret to create Order and StripePaymentInfo objects
+                const raw = error.raw as { payment_intent?: { id?: string, client_secret?: string } };
+                console.log("payment_intent id")
+                console.log(raw.payment_intent?.id)
+                console.log("end of payment_intent id")
+
+                payment_intent = {
+                    id: raw.payment_intent?.id,
+                    client_secret: raw.payment_intent?.client_secret
+                }
+            } else {
+                throw error;
+            }
+        }
 
         // create StripePaymentInfo
+        if (!payment_intent.id || !payment_intent.client_secret) {
+            throw new Error("Invalid payment intent.")
+        }
+
         console.log(`[createPaymentIntent] Creating StripePaymentInfo object for PaymentIntent`);
         const create_stripe_payment_status = await this.prisma.stripePaymentInfo.create({
             data: {
@@ -355,6 +388,10 @@ export class TicketService {
         )
 
         // return client secret and order ID
+        if (payment_failed) {
+            console.log(`[createPaymentIntent] Payment failed. Throwing error.`);
+            throw new Error("Card failed.");
+        }
         return {
             client_secret: payment_intent.client_secret,
             order_id: created_order_id

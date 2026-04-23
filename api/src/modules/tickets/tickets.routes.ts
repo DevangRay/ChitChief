@@ -6,6 +6,7 @@ import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
 import ConflictError from "../../lib/custom_errors/ConflictError";
+import Stripe from "stripe";
 
 type ReserveTicketRequestBody = {
     seat_ids: string[],
@@ -111,6 +112,9 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             } else if (error instanceof ConflictError) {
                 console.log("[tickets.routes /payment/intent]: Caught 409 Error on other Resource. Returning.")
                 return reply.status(409).send({ message: error.message });
+            } else if (error instanceof Stripe.errors.StripeCardError) {
+                console.log("[tickets.routes /payment/intent]: Caught Stripe Card Error. Returning.")
+                return reply.status(402).send({ message: error.message });
             } else {
                 console.log("[tickets.routes /payment/intent]: Unplanned error. Returning.")
                 return reply.status(500).send({ message: 'Internal server error' });
