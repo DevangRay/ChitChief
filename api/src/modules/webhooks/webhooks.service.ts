@@ -61,17 +61,6 @@ export class WebhooksService {
             }
         })
         console.log('[handleSuccess] Updated Seats to:', sold_seats)
-
-        // TEST SECTION
-        console.log("[handleSuccess] TEST: adding reset successful order job")
-        await this.test_reservation_queue.add(
-            'reset_successful_orders',
-            { order_id: completed_order.id },
-            {
-                delay: 15 * 1000, //delay in milliseconds
-            }
-        );
-        console.log("[handleSuccess] TEST: Job enqueued.")
     }
 
     async handleFailure(user_uuid: string | undefined, idempotency_key: string | undefined): Promise<void> {
