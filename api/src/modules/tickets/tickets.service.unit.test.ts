@@ -42,7 +42,6 @@ const IDEMPOTENCY_KEY = 'idem-key-uuid-1';
 const ORDER_ID = 'order-uuid-1';
 const STRIPE_PAYMENT_INFO_ID = 'stripe-payment-info-uuid-1';
 const STRIPE_CLIENT_SECRET = 'pi_test_secret_abc123';
-const STRIPE_PAYMENT_INTENT_ID = 'payment_intent_id'
 
 /** All PaymentMethod values that Stripe treats as immediately successful. */
 const SUCCESS_PAYMENT_METHODS = [
@@ -73,19 +72,30 @@ const EXPECTED_SUCCESS_RETURN_OBJECT =
 // ─────────────────────────────────────────────────────────────────────────────
 // Mocking Stripe module
 // ─────────────────────────────────────────────────────────────────────────────
-const paymentIntentsCreateMock = vi.fn().mockResolvedValue({
-    id: STRIPE_PAYMENT_INTENT_ID,
-    client_secret: STRIPE_CLIENT_SECRET,
-});
+
+// vi.hoisted() ensures this mock is created before vi.mock() factories run,
+// so the same reference can be used both inside the factory and in assertions.
+const paymentIntentsCreateMock = vi.hoisted(() =>
+    vi.fn().mockResolvedValue({
+        id: 'payment_intent_id',
+        client_secret: 'pi_test_secret_abc123',
+    })
+);
 
 vi.mock('stripe', () => {
-    return {
-        default: vi.fn().mockImplementation(() => ({
-            paymentIntents: {
-                create: paymentIntentsCreateMock,
-            },
-        })),
-    };
+    class StripeCardError extends Error {
+        constructor(message: string) {
+            super(message);
+            this.name = 'StripeCardError';
+        }
+    }
+    const mock = vi.fn().mockImplementation(() => ({
+        paymentIntents: {
+            create: paymentIntentsCreateMock,
+        },
+    })) as any;
+    mock.errors = { StripeCardError };
+    return { default: mock };
 });
 // ─────────────────────────────────────────────────────────────────────────────
 // Seed helpers
@@ -154,6 +164,7 @@ const makeExpiredToken = (seatIds: string[], redis_locks: string[], userId: stri
 // ─────────────────────────────────────────────────────────────────────────────
 
 type LockState = 'valid' | 'missing' | 'wrong-owner';
+type PaymentMethod = typeof FAILURE_PAYMENT_METHODS[number] | typeof SUCCESS_PAYMENT_METHODS[number]
 
 const buildPaymentService = ({
     seatIds = makeSeatIds(2),
@@ -161,6 +172,7 @@ const buildPaymentService = ({
     existingOrder = null as null | { id: string; client_secret: string, order_status: string },
     dbWriteError = undefined as Error | undefined,
     tokenUserId = USER_ID,
+    paymentMethod = undefined as PaymentMethod | undefined,
 } = {}) => {
     // Redis: get() returns the owner string or null depending on lockState.
     const redisMock = {
@@ -194,10 +206,12 @@ const buildPaymentService = ({
             createMany: vi.fn().mockResolvedValue({ count: seatIds.length }),
         },
         stripePaymentInfo: {
-            create: vi.fn().mockResolvedValue({
-                id: STRIPE_PAYMENT_INFO_ID,
-                client_secret: STRIPE_CLIENT_SECRET
-            })
+            create: paymentMethod && (FAILURE_PAYMENT_METHODS as readonly string[]).includes(paymentMethod)
+                ? vi.fn().mockRejectedValue(new Error(`Payment declined for method: ${paymentMethod}`))
+                : vi.fn().mockResolvedValue({
+                    id: STRIPE_PAYMENT_INFO_ID,
+                    client_secret: STRIPE_CLIENT_SECRET,
+                }),
         }
     };
 
@@ -1160,13 +1174,9 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                     const token = makeValidToken(seatIds, lockIds);
 
                     // Stripe mock throws a card-declined error for these methods.
-                    const stripeError = Object.assign(new Error('Your card was declined.'), {
-                        type: 'StripeCardError',
-                        code: 'card_declined',
-                    });
-                    const { service } = buildPaymentService({ seatIds });
+                    const { service } = buildPaymentService({ seatIds, paymentMethod: method });
                     // Re-wire the Stripe mock to throw for this specific test.
-                    paymentIntentsCreateMock.mockRejectedValueOnce(stripeError);
+                    paymentIntentsCreateMock.mockRejectedValueOnce(`Payment declined for method: ${method}`);
 
                     await expect(
                         service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, method),
@@ -1206,7 +1216,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const token = makeValidToken(seatIds, lockIds);
                 const { service } = buildPaymentService({
                     seatIds,
-                    existingOrder: { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.PENDING  },
+                    existingOrder: { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.PENDING },
                 });
 
                 const result = await service.createPaymentIntent(
@@ -1222,7 +1232,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const token = makeValidToken(seatIds, lockIds);
                 const { service } = buildPaymentService({
                     seatIds,
-                    existingOrder: { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.PENDING  },
+                    existingOrder: { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.PENDING },
                 });
 
                 await service.createPaymentIntent(
