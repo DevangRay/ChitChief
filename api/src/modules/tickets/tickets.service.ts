@@ -22,7 +22,8 @@ type SigningObject = {
     redis_locks: string[],
     seat_ids: string[],
     expires_at: number,
-    user_uuid: string
+    user_uuid: string,
+    expire_seat_job_id: string
 } | null
 
 type ReservationObject = {
@@ -166,7 +167,7 @@ export class TicketService {
 
         // 5. Enqueue BullMQ job to release locks and set seats back to AVAILABLE after expiration time
         console.log("[reserveSeats] Enqueuing job to release locks and reset seat statuses after expiration time.");
-        await this.reservation_queue.add(
+        const expire_seat_reservation_job = await this.reservation_queue.add(
             'expire_seat_reservation',
             { seat_ids: unique_seat_ids },
             {
@@ -182,7 +183,8 @@ export class TicketService {
             redis_locks: redis_array,
             seat_ids: unique_seat_ids,
             expires_at: expiration_timestamp,
-            user_uuid: user_uuid
+            user_uuid: user_uuid,
+            expire_seat_job_id: expire_seat_reservation_job.id
         }
         const signed_token = jwt.sign(
             signable_payload,
@@ -242,6 +244,8 @@ export class TicketService {
             throw new ConflictError("New idempotency key is required.");
         } else if (potential_order_status?.order_status === OrderStatus.FAILED) {
             // order failed from failed payment. Allow check for new valid payment
+            // THIS FLOW EXPECTS THAT A NEW IDEMPOTENCY KEY IS GENERATED
+            // IN A FRONT-END THE IDEMPOTENCY KEY WOULD BE MADE BEFORE A NEW PAYMENT ATTEMPT, SO THIS IS A REASONABLE EXPECTATION
             console.log(`[createPaymentIntent] Order created, but payment failed. User still has lock. Need to create. Continuing...`);
         }
         else {
@@ -381,17 +385,18 @@ export class TicketService {
         })
         console.log(`[createPaymentIntent] Created OrderSeats:`, create_order_seats_status);
 
-        // Set worker to update Order
-        await this.reservation_queue.add(
-            'expire_pending_order',
-            { order_id: created_order_id },
-            {
-                delay: TTL_TIME_IN_SECONDS * 1000 // delay in milliseconds
-            }
-        )
-
         // return client secret and order ID
         if (payment_failed) {
+            // Realistically, this job would removed in case of successful confirmation from /ticekts/purchase/confirm connected to frontend
+            // Set worker to update Order
+            await this.reservation_queue.add(
+                'expire_pending_order',
+                { order_id: created_order_id },
+                {
+                    delay: TTL_TIME_IN_SECONDS * 1000 // delay in milliseconds
+                }
+            )
+
             console.log(`[createPaymentIntent] Payment failed. Throwing error.`);
             throw new Stripe.errors.StripeCardError({
                 message: "Your card was declined.",
@@ -400,6 +405,15 @@ export class TicketService {
                 decline_code: "generic_decline",
                 charge: payment_intent.latest_charge as string
             })
+        }
+
+        try {
+            // upon successful job, the expire_seat_job no longer has to run
+            await this.reservation_queue.remove(payload.expire_seat_job_id)
+        } catch (error) {
+            // if the job is not removed, the error will be caught in handleSuccess with a refund
+
+            console.log(`[createPaymentIntent] Could not remove expire_seat_rservation job from queue.`);
         }
         return {
             client_secret: payment_intent.client_secret,

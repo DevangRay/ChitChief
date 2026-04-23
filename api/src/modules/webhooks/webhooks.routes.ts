@@ -20,7 +20,6 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
                 signature,
                 endpoint_secret
             );
-
         } catch (error) {
             console.log(`[webhooks.routes /payment/confirm]: Failed to construct Stripe event:`, error);
             return reply.status(400).send({ message: error });
@@ -30,7 +29,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             case "payment_intent.succeeded":
                 // update order
                 console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.succeeded — id: ${event.data?.object?.id}, amount: ${event.data?.object?.amount / 100} ${event.data?.object?.currency?.toUpperCase()}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}, seats: ${event.data?.object?.description}`);
-                await service.handleSuccess(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.idempotency_key);
+                await service.handleSuccess(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.idempotency_key, event.data?.object?.id);
                 break;
             case "payment_intent.payment_failed":
                 console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.payment_failed — id: ${event.data?.object?.id}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}`);
