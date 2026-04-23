@@ -236,10 +236,14 @@ export class TicketService {
                 client_secret: potential_order_status.stripe_payment_info.client_secret,
                 order_id: potential_order_status.id
             }
-        } else if (potential_order_status?.order_status === OrderStatus.FAILED || potential_order_status?.order_status === OrderStatus.EXPIRED) {
-            // order was not succesful or TTL passed. Lock exists but order failed.
+        } else if (potential_order_status?.order_status === OrderStatus.EXPIRED) {
+            // order expired/TTL passed. Lock exists but order failed.
             throw new ConflictError("New idempotency key is required.");
-        } else {
+        } else if (potential_order_status?.order_status === OrderStatus.FAILED) {
+            // order failed from failed payment. Allow check for new valid payment
+            console.log(`[createPaymentIntent] Order created, but payment failed. User still has lock. Need to create. Continuing...`);
+        }
+        else {
             console.log(`[createPaymentIntent] No Order exists. Need to create. Continuing...`);
         }
 
@@ -320,7 +324,7 @@ export class TicketService {
         } catch (error) {
             console.log(`[createPaymentIntent] Payment failed.`);
             payment_failed = true;
-            
+
             if (error instanceof Stripe.errors.StripeCardError) {
                 // Catch StripeCardError to retrieve Payment Intent ID and Client Secret to create Order and StripePaymentInfo objects
                 const raw = error.raw as { payment_intent?: { id?: string, client_secret?: string } };
