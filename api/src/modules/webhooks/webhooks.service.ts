@@ -96,7 +96,7 @@ export class WebhooksService {
                 order_status: OrderStatus.PENDING
             },
             data: {
-                order_status: OrderStatus.EXPIRED
+                order_status: OrderStatus.FAILED
             }
         })
         console.log(expired_order)
