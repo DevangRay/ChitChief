@@ -36,6 +36,10 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
                 console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.payment_failed — id: ${event.data?.object?.id}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}`);
                 await service.handleFailure(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.idempotency_key);
                 break;
+            case "payment_intent.requires_action":
+                // out of scope at the moment
+                console.log(`[webhooks.routes /payment/confirm]: Encountered payment_intent.requires_action`);
+                console.log(`[webhooks.routes /payment/confirm]: Out of scope`);
             default:
                 console.log(`[webhooks.routes /payment/confirm]: Unhandled Stripe event type: ${event.type}`);
         }
