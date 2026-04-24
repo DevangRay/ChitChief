@@ -19,6 +19,7 @@
  *   - Valid input: completes without throwing
  *   - user_uuid: missing / empty string
  *   - idempotency_key: missing / empty string
+ *   - payment_intent: missing / empty string
  *   - DB reflects CONFIRMED order and SOLD seats after a successful call
  *   - OrderSeats are deleted after a successful call
  *   - Edge case: order with no connected seats completes without throwing
@@ -39,12 +40,30 @@ import { OrderStatus, SeatStatus } from '@prisma/client';
 import ResourceNotFoundError from '../../lib/custom_errors/ResourceNotFoundError';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Module mocks
+//
+// vi.mock is hoisted — vi.hoisted() lets us share a stable fn reference into
+// the stripe factory so individual tests can inspect refunds.create calls.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { mockRefundsCreate } = vi.hoisted(() => ({
+    mockRefundsCreate: vi.fn().mockResolvedValue({ id: 'refund_123' }),
+}));
+
+vi.mock('stripe', () => ({
+    default: vi.fn(() => ({
+        refunds: { create: mockRefundsCreate },
+    })),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
 const USER_ID = 'user-uuid-1';
 const IDEMPOTENCY_KEY = 'idem-key-uuid-1';
 const ORDER_ID = 'order-uuid-1';
+const PAYMENT_INTENT = 'pi_test_123';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Seed helpers
@@ -89,8 +108,16 @@ const makePrismaMock = ({
     orderUpdateResult = makeOrder(),
     orderUpdateError = undefined as Error | undefined,
     seatUpdateError = undefined as Error | undefined,
+    // Controls what findUnique returns for the idempotency check.
+    // Defaults to PENDING so the happy path proceeds normally.
+    findUniqueResult = makeOrder({ order_status: OrderStatus.PENDING }) as ReturnType<typeof makeOrder> | null,
+    // Controls how many rows seat.updateMany reports as updated.
+    // Defaults to seatIds.length (all rows updated = no mismatch).
+    // Set to a smaller value to trigger the refund-and-revert path.
+    seatUpdateCount = undefined as number | undefined,
 } = {}) => ({
     order: {
+        findUnique: vi.fn().mockResolvedValue(findUniqueResult),
         update: orderUpdateError
             ? vi.fn().mockRejectedValue(orderUpdateError)
             : vi.fn().mockResolvedValue(orderUpdateResult),
@@ -102,7 +129,7 @@ const makePrismaMock = ({
     seat: {
         updateMany: seatUpdateError
             ? vi.fn().mockRejectedValue(seatUpdateError)
-            : vi.fn().mockResolvedValue({ count: seatIds.length }),
+            : vi.fn().mockResolvedValue({ count: seatUpdateCount ?? seatIds.length }),
     },
 });
 
@@ -130,10 +157,10 @@ describe('WebhooksService.handleSuccess — behavior', () => {
     describe('input validation', () => {
 
         describe('equivalence cases — valid input', () => {
-            it('completes without throwing for valid user_uuid and idempotency_key', async () => {
+            it('completes without throwing for valid user_uuid, idempotency_key, and payment_intent', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY)).resolves.toBeUndefined();
+                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT)).resolves.toBeUndefined();
             });
         });
 
@@ -141,14 +168,14 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             it('throws ResourceNotFoundError when user_uuid is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(undefined, IDEMPOTENCY_KEY))
+                await expect(service.handleSuccess(undefined, IDEMPOTENCY_KEY, PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when user_uuid is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess('', IDEMPOTENCY_KEY))
+                await expect(service.handleSuccess('', IDEMPOTENCY_KEY, PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -157,14 +184,30 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             it('throws ResourceNotFoundError when idempotency_key is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, undefined))
+                await expect(service.handleSuccess(USER_ID, undefined, PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when idempotency_key is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, ''))
+                await expect(service.handleSuccess(USER_ID, '', PAYMENT_INTENT))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+        });
+
+        describe('exception cases — missing payment_intent', () => {
+            it('throws ResourceNotFoundError when payment_intent is undefined', async () => {
+                const { service } = buildService();
+
+                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, undefined))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+
+            it('throws ResourceNotFoundError when payment_intent is an empty string', async () => {
+                const { service } = buildService();
+
+                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, ''))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -179,7 +222,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
         it('updates the Order to CONFIRMED status', async () => {
             const { service, prismaMock } = buildService();
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.order.update.mock.calls[0][0];
             expect(updateCall.data.order_status).toBe(OrderStatus.CONFIRMED);
@@ -188,7 +231,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
         it('updates the Order filtered by user_id, idempotency_key, and PENDING status', async () => {
             const { service, prismaMock } = buildService();
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.order.update.mock.calls[0][0];
             expect(updateCall.where).toMatchObject({
@@ -202,29 +245,116 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const seatIds = makeSeatIds(3);
             const { service, prismaMock } = buildService({ seatIds });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.seat.updateMany.mock.calls[0][0];
             expect(updateCall.data.seat_status).toBe(SeatStatus.SOLD);
             expect(updateCall.where.id.in).toEqual(expect.arrayContaining(seatIds));
         });
-    });
 
-    // =========================================================================
-    // 3. Edge cases
-    // =========================================================================
+        it('filters the Seat update to only RESERVED seats to avoid overwriting already-sold seats', async () => {
+            const seatIds = makeSeatIds(3);
+            const { service, prismaMock } = buildService({ seatIds });
 
-    describe('edge cases', () => {
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
-        it('completes without throwing when the order has no connected seats', async () => {
-            const { service } = buildService({ seatIds: [] });
-
-            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY)).resolves.toBeUndefined();
+            const updateCall = prismaMock.seat.updateMany.mock.calls[0][0];
+            expect(updateCall.where).toMatchObject({ seat_status: SeatStatus.RESERVED });
         });
     });
 
     // =========================================================================
-    // 4. Error propagation
+    // 3. Idempotency guards
+    // =========================================================================
+
+    describe('idempotency guards', () => {
+
+        it('returns early without writing to the DB when the order is already CONFIRMED', async () => {
+            const { service, prismaMock } = buildService({
+                findUniqueResult: makeOrder({ order_status: OrderStatus.CONFIRMED }),
+            });
+
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            expect(prismaMock.order.update).not.toHaveBeenCalled();
+        });
+
+        it('returns early without writing to the DB when the order is already FAILED', async () => {
+            const { service, prismaMock } = buildService({
+                findUniqueResult: makeOrder({ order_status: OrderStatus.FAILED }),
+            });
+
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            expect(prismaMock.order.update).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================================================
+    // 4. Edge cases
+    // =========================================================================
+
+    describe('edge cases', () => {
+        // CHECK
+        it('completes without throwing when the order has no connected seats', async () => {
+            const { service } = buildService({ seatIds: [] });
+
+            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT)).resolves.toBeUndefined();
+        });
+    });
+
+    // =========================================================================
+    // 5. Seat count mismatch — refund and revert
+    //
+    // When sold_seats.count < connected_seat_ids.length, at least one seat was
+    // already in a non-RESERVED state (race condition / double-booking).
+    // The service should: refund via Stripe, revert the Order to FAILED, and
+    // revert all connected Seats to AVAILABLE.
+    // =========================================================================
+
+    describe('seat count mismatch — refund and revert', () => {
+
+        it('initiates a Stripe refund with the correct payment_intent when sold seat count does not match', async () => {
+            const seatIds = makeSeatIds(2);
+            const { service } = buildService({ seatIds, seatUpdateCount: 1 });
+
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            expect(mockRefundsCreate).toHaveBeenCalledWith({ payment_intent: PAYMENT_INTENT });
+        });
+
+        it('reverts the Order to FAILED when sold seat count does not match', async () => {
+            const seatIds = makeSeatIds(2);
+            const { service, prismaMock } = buildService({ seatIds, seatUpdateCount: 1 });
+
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            const revertCall = prismaMock.order.update.mock.calls[1][0];
+            expect(revertCall.data.order_status).toBe(OrderStatus.FAILED);
+        });
+
+        it('reverts all connected Seats to AVAILABLE when sold seat count does not match', async () => {
+            const seatIds = makeSeatIds(2);
+            const { service, prismaMock } = buildService({ seatIds, seatUpdateCount: 1 });
+
+            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            const revertCall = prismaMock.seat.updateMany.mock.calls[1][0];
+            expect(revertCall.data.seat_status).toBe(SeatStatus.AVAILABLE);
+        });
+
+        it('completes without throwing when the mismatch triggers a revert', async () => {
+            const seatIds = makeSeatIds(2);
+            const { service } = buildService({ seatIds, seatUpdateCount: 1 });
+
+            await expect(
+                service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT)
+            ).resolves.toBeUndefined();
+        });
+    });
+
+    // =========================================================================
+    // 6. Error propagation
     // =========================================================================
 
     describe('error propagation', () => {
@@ -233,7 +363,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const dbError = new Error('Order not found');
             const { service } = buildService({ orderUpdateError: dbError });
 
-            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY))
+            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT))
                 .rejects.toThrow('Order not found');
         });
 
@@ -241,7 +371,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const dbError = new Error('Seat update failed');
             const { service } = buildService({ seatUpdateError: dbError });
 
-            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY))
+            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT))
                 .rejects.toThrow('Seat update failed');
         });
     });
@@ -305,7 +435,24 @@ describe('WebhooksService.handleFailure — behavior', () => {
     });
 
     // =========================================================================
-    // 2. DB state transitions
+    // 2. Idempotency guards
+    // =========================================================================
+
+    describe('idempotency guards', () => {
+
+        it('returns early without writing to the DB when the order is already FAILED', async () => {
+            const { service, prismaMock } = buildService({
+                findUniqueResult: makeOrder({ order_status: OrderStatus.FAILED }),
+            });
+
+            await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
+
+            expect(prismaMock.order.update).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================================================
+    // 3. DB state transitions
     // =========================================================================
 
     describe('DB state transitions', () => {
@@ -319,7 +466,8 @@ describe('WebhooksService.handleFailure — behavior', () => {
             expect(updateCall.data.order_status).toBe(OrderStatus.FAILED);
         });
 
-        it('updates the Order filtered by user_id, idempotency_key, and PENDING status', async () => {
+        it('updates the Order filtered by user_id, idempotency_key', async () => {
+            // filter does not filter by status, regardless of status the correct action is to expire the order upon a failed webhook call
             const { service, prismaMock } = buildService();
 
             await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
@@ -328,19 +476,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
             expect(updateCall.where).toMatchObject({
                 user_id: USER_ID,
                 idempotency_key: IDEMPOTENCY_KEY,
-                order_status: OrderStatus.PENDING,
             });
-        });
-
-        it('updates connected Seats back to AVAILABLE status', async () => {
-            const seatIds = makeSeatIds(3);
-            const { service, prismaMock } = buildService({ seatIds });
-
-            await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
-
-            const updateCall = prismaMock.seat.updateMany.mock.calls[0][0];
-            expect(updateCall.data.seat_status).toBe(SeatStatus.AVAILABLE);
-            expect(updateCall.where.id.in).toEqual(expect.arrayContaining(seatIds));
         });
 
         it('should not delete connected OrderSeats after updating the order', async () => {
@@ -354,7 +490,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
     });
 
     // =========================================================================
-    // 3. Edge cases
+    // 4. Edge cases
     // =========================================================================
 
     describe('edge cases', () => {
@@ -367,7 +503,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
     });
 
     // =========================================================================
-    // 4. Error propagation
+    // 5. Error propagation
     // =========================================================================
 
     describe('error propagation', () => {
@@ -378,14 +514,6 @@ describe('WebhooksService.handleFailure — behavior', () => {
 
             await expect(service.handleFailure(USER_ID, IDEMPOTENCY_KEY))
                 .rejects.toThrow('Order not found');
-        });
-
-        it('propagates an error thrown by seat.updateMany', async () => {
-            const dbError = new Error('Seat update failed');
-            const { service } = buildService({ seatUpdateError: dbError });
-
-            await expect(service.handleFailure(USER_ID, IDEMPOTENCY_KEY))
-                .rejects.toThrow('Seat update failed');
         });
     });
 });
