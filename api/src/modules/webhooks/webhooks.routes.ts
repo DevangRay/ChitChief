@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import Stripe from "stripe";
 import { WebhooksService } from "./webhooks.service";
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new WebhooksService(fastify.prisma, fastify.redis);
