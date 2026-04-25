@@ -167,7 +167,6 @@ export class WebhooksService {
             }
         })
         console.log('[handleFailure] Updated order to:', expired_order)
-
         // Only the update needs to be updated. The BullMQ job will update seats once the TTL expires, or the user has a chance to resubmit a payment
 
         // Enqueue job to notify user

@@ -8,6 +8,7 @@
     "test:events:unit": "vitest run ./src/modules/events/events.service.unit.test.ts",
     "test:events:e2e": "vitest run ./src/modules/events/events.routes.e2e.test.ts",
     "test:tickets:unit": "vitest run ./src/modules/tickets/tickets.service.unit.test.ts",
+    "test:tickets:e2e": "vitest run ./src/modules/tickets/tickets.routes.e2e.test.ts",
     "test:webhooks:unit": "vitest run ./src/modules/webhooks/webhooks.service.unit.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
