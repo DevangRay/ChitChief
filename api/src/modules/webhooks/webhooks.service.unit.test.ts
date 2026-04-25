@@ -56,6 +56,12 @@ vi.mock('stripe', () => ({
     })),
 }));
 
+// Minimal no-op mock — prevents errors when the service constructor calls
+// `new Queue(...)`. The actual queue instance is injected per-test in buildService.
+vi.mock('bullmq', () => ({
+    Queue: vi.fn(class { } as any),
+}));
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,12 +90,29 @@ const makeOrder = (overrides: Partial<{ id: string; order_status: OrderStatus }>
 
 /** Build an array of OrderSeats records referencing the given seat ids. */
 const makeOrderSeats = (seatIds: string[]) =>
-    seatIds.map((seat_id) => ({
+    seatIds.map((seat_id, index) => ({
         id: `order-seat-${seat_id}`,
         order_id: ORDER_ID,
         seat_id,
         price_at_purchase: 10000,
+        seat: {
+            row: 'A',
+            number: index,
+            event: {
+                name: "Test Event Name",
+                description: "Test Event Description"
+            }
+        }
     }));
+
+/** Build a Seat record as returned by updateManyAndReturn. */
+const makeSeatRecord = (id: string, index: number) => ({
+    id,
+    row: 'A',
+    number: index + 1,
+    event_id: 'event-uuid-1',
+    seat_status: SeatStatus.SOLD,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock factories
@@ -111,33 +134,55 @@ const makePrismaMock = ({
     // Controls what findUnique returns for the idempotency check.
     // Defaults to PENDING so the happy path proceeds normally.
     findUniqueResult = makeOrder({ order_status: OrderStatus.PENDING }) as ReturnType<typeof makeOrder> | null,
-    // Controls how many rows seat.updateMany reports as updated.
+    // Controls how many seat rows updateManyAndReturn reports as updated.
     // Defaults to seatIds.length (all rows updated = no mismatch).
     // Set to a smaller value to trigger the refund-and-revert path.
     seatUpdateCount = undefined as number | undefined,
-} = {}) => ({
-    order: {
-        findUnique: vi.fn().mockResolvedValue(findUniqueResult),
-        update: orderUpdateError
-            ? vi.fn().mockRejectedValue(orderUpdateError)
-            : vi.fn().mockResolvedValue(orderUpdateResult),
-    },
-    orderSeats: {
-        findMany: vi.fn().mockResolvedValue(makeOrderSeats(seatIds)),
-        deleteMany: vi.fn().mockResolvedValue({ count: seatIds.length }),
-    },
-    seat: {
-        updateMany: seatUpdateError
-            ? vi.fn().mockRejectedValue(seatUpdateError)
-            : vi.fn().mockResolvedValue({ count: seatUpdateCount ?? seatIds.length }),
-    },
+} = {}) => {
+    const effectiveCount = seatUpdateCount ?? seatIds.length;
+    const seatRecords = seatIds.slice(0, effectiveCount).map((id, i) => makeSeatRecord(id, i));
+
+    return {
+        order: {
+            findUnique: vi.fn().mockResolvedValue(findUniqueResult),
+            update: orderUpdateError
+                ? vi.fn().mockRejectedValue(orderUpdateError)
+                : vi.fn().mockResolvedValue(orderUpdateResult),
+        },
+        orderSeats: {
+            findMany: vi.fn().mockResolvedValue(makeOrderSeats(seatIds)),
+            deleteMany: vi.fn().mockResolvedValue({ count: seatIds.length }),
+        },
+        seat: {
+            // Used for the initial SOLD update — returns the updated seat records.
+            updateManyAndReturn: seatUpdateError
+                ? vi.fn().mockRejectedValue(seatUpdateError)
+                : vi.fn().mockResolvedValue(seatRecords),
+            // Used only in the revert path to set seats back to AVAILABLE.
+            updateMany: vi.fn().mockResolvedValue({ count: seatIds.length }),
+        },
+        event: {
+            findUnique: vi.fn().mockResolvedValue({
+                id: 'event-uuid-1',
+                name: 'Test Event',
+                description: 'A test event',
+            }),
+        },
+    };
+};
+
+/** Build a Queue mock with a spy on `add`. */
+const makeQueueMock = () => ({
+    add: vi.fn().mockResolvedValue({}),
 });
 
 /** Build the service under test with the given world state. */
 const buildService = (options: Parameters<typeof makePrismaMock>[0] = {}) => {
     const prismaMock = makePrismaMock(options);
-    const service = new WebhooksService(prismaMock as any);
-    return { service, prismaMock };
+    const queueMock = makeQueueMock();
+    const service = new WebhooksService(prismaMock as any, queueMock as any);
+    (service as any).reservation_queue = queueMock;
+    return { service, prismaMock, queueMock };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -247,7 +292,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
 
             await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
-            const updateCall = prismaMock.seat.updateMany.mock.calls[0][0];
+            const updateCall = prismaMock.seat.updateManyAndReturn.mock.calls[0][0];
             expect(updateCall.data.seat_status).toBe(SeatStatus.SOLD);
             expect(updateCall.where.id.in).toEqual(expect.arrayContaining(seatIds));
         });
@@ -258,7 +303,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
 
             await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
-            const updateCall = prismaMock.seat.updateMany.mock.calls[0][0];
+            const updateCall = prismaMock.seat.updateManyAndReturn.mock.calls[0][0];
             expect(updateCall.where).toMatchObject({ seat_status: SeatStatus.RESERVED });
         });
     });
@@ -339,7 +384,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
 
             await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
-            const revertCall = prismaMock.seat.updateMany.mock.calls[1][0];
+            const revertCall = prismaMock.seat.updateMany.mock.calls[0][0];
             expect(revertCall.data.seat_status).toBe(SeatStatus.AVAILABLE);
         });
 
