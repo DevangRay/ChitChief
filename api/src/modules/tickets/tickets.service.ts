@@ -1,6 +1,6 @@
 import { OrderStatus, PrismaClient, SeatStatus, type Seat } from "@prisma/client"
 import { Queue } from "bullmq"
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import type { Redis } from "ioredis";
 import Stripe from 'stripe';
 import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys.js";

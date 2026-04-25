@@ -24,10 +24,10 @@ model User {
 
 model RefreshToken {
   id String @id @default(uuid())
-  token String @unique
+  token String @unique @default(uuid())
   user_id String
-  user User @relation(fields: [user_id], references: [id])
-  expires_at DateTime
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  expires_at DateTime @default(dbgenerated("NOW() + INTERVAL '1 minute'"))
   created_at DateTime @default(now())
 
   @@index([user_id])
@@ -50,7 +50,7 @@ model Event {
 model Seat {
   id String @id @default(uuid())
   event_id String
-  event Event @relation(fields: [event_id], references: [id])
+  event Event @relation(fields: [event_id], references: [id], onDelete: Cascade)
   row String
   number Int
   /// Stored in cents
@@ -80,9 +80,9 @@ model Order {
 model OrderSeats {
   id String @id @default(uuid())
   order_id String
-  order Order @relation(fields: [order_id], references: [id])
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
   seat_id String
-  seat Seat @relation(fields: [seat_id], references: [id])
+  seat Seat @relation(fields: [seat_id], references: [id], onDelete: Cascade)
   /// Saving seat price at moment seat is bought
   price_at_purchase Int
   created_at DateTime @default(now())

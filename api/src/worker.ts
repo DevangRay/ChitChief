@@ -70,6 +70,22 @@ const worker = new Worker(
             } else {
                 console.log(`[worker: ${getDateForLogs()} | EXPIRE_PENDING_ORDER] Order (${order_id}) was already handled.`);
             }
+        } else if (job.name === "send_success_message") {
+            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Processing send_success_message job with data:`, job.data);
+            const { email_target, order_id, event_name, seats } = job.data;
+
+            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Sending success email to:`, email_target);
+
+            const email_result = await sendPostPaymentEmail(true, email_target, order_id, event_name, seats);
+            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Sent success email with result:`, email_result);
+        } else if (job.name === "send_failure_message") {
+            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Processing send_failure_message job with data:`, job.data);
+            const { email_target, order_id, event_name, seats } = job.data;
+
+            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sending success email to:`, email_target);
+
+            const email_result = await sendPostPaymentEmail(false, email_target, order_id, event_name, seats);
+            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sent success email with result:`, email_result);
         } else if (job.name === "reset_successful_orders") {
             console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Processing reset_successful_orders job with data:`, job.data);
             const { order_id } = job.data;
@@ -102,22 +118,16 @@ const worker = new Worker(
             });
 
             console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Reset Order ${order_id} to EXPIRED and set ${seat_ids.length} seat(s) to AVAILABLE.`);
-        } else if (job.name === "send_success_message") {
-            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Processing send_success_message job with data:`, job.data);
-            const { email_target, order_id, event_name, seats } = job.data;
+        } else if (job.name === "remove_added_user") {
+            console.log(`[worker: ${getDateForLogs()} | REMOVE_ADDED_USER] Processing remove_added_user job with data:`, job.data);
+            const { user_id } = job.data;
 
-            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Sending success email to:`, email_target);
-
-            const email_result = await sendPostPaymentEmail(true, email_target, order_id, event_name, seats);
-            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Sent success email with result:`, email_result);
-        } else if (job.name === "send_failure_message") {
-            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Processing send_failure_message job with data:`, job.data);
-            const { email_target, order_id, event_name, seats } = job.data;
-
-            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sending success email to:`, email_target);
-
-            const email_result = await sendPostPaymentEmail(false, email_target, order_id, event_name, seats);
-            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sent success email with result:`, email_result);
+            const deleted_user = await prisma.user.delete({
+                where: {
+                    id: user_id
+                }
+            })
+            console.log(`[worker: ${getDateForLogs()} | REMOVE_ADDED_USER] Deleted user:`, deleted_user);
         }
     },
     { connection }
