@@ -32,13 +32,6 @@ type ReservationObject = {
     expires_at_string: string
 }
 
-/*
-TODO:
-    * Extract steps to helper functions
-    * Need to check if user exists in the DB
-*/
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-
 const TTL_TIME_IN_SECONDS = 60;
 
 // Can improve performance with SCRIPT LOAD and using EVALSHA
@@ -74,11 +67,13 @@ const REDIS_LOCK_LUA_SCRIPT = `
 
 export class TicketService {
     private readonly reservation_queue: Queue;
+    private readonly stripe: InstanceType<typeof Stripe>;
 
     constructor(private readonly redis: Redis, private readonly prisma: PrismaClient) {
         this.reservation_queue = new Queue('reservations', {
             connection: this.redis
         });
+        this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
     }
 
     async reserveSeats(seats: string[], user_uuid: string): Promise<ReservationObject> {
@@ -305,7 +300,7 @@ export class TicketService {
         let payment_intent: PaymentIntent;
         let payment_failed: Boolean = false;
         try {
-            payment_intent = await stripe.paymentIntents.create({
+            payment_intent = await this.stripe.paymentIntents.create({
                 amount: total_price,
                 currency: 'usd',
                 // @TODO: make this description user-readable

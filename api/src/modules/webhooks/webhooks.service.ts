@@ -116,7 +116,7 @@ export class WebhooksService {
         console.log("[handleSuccess] Adding job to send status email")
         const associated_event = await this.prisma.event.findUnique({
             where: {
-                id: sold_seats[0]?.event_id
+                id: sold_seats[0]?.event_id!
             }
         })
         console.log("[handleSuccess] Retrieved associated_event:", associated_event);
