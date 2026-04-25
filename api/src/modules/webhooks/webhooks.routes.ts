@@ -1,13 +1,14 @@
 import { FastifyInstance } from "fastify";
 import Stripe from "stripe";
 import { WebhooksService } from "./webhooks.service";
+import { confirmPaymentSchema } from "./webhooks.schema";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new WebhooksService(fastify.prisma, fastify.redis);
 
-    fastify.post('/payment/confirm', async (request, reply) => {
+    fastify.post('/payment/confirm', { schema: confirmPaymentSchema }, async (request, reply) => {
         let event;
         try {
             const raw_event = request.body as Buffer;
