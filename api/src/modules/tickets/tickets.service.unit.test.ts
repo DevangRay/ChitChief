@@ -89,11 +89,13 @@ vi.mock('stripe', () => {
             this.name = 'StripeCardError';
         }
     }
-    const mock = vi.fn().mockImplementation(() => ({
-        paymentIntents: {
-            create: paymentIntentsCreateMock,
-        },
-    })) as any;
+    const mock = vi.fn().mockImplementation(function() {
+        return {
+            paymentIntents: {
+                create: paymentIntentsCreateMock,
+            },
+        };
+    }) as any;
     mock.errors = { StripeCardError };
     return { default: mock };
 });

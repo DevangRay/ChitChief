@@ -51,9 +51,9 @@ const { mockRefundsCreate } = vi.hoisted(() => ({
 }));
 
 vi.mock('stripe', () => ({
-    default: vi.fn(() => ({
-        refunds: { create: mockRefundsCreate },
-    })),
+    default: vi.fn(function () {
+        return { refunds: { create: mockRefundsCreate } };
+    }),
 }));
 
 // Minimal no-op mock — prevents errors when the service constructor calls

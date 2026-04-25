@@ -35,10 +35,9 @@ type ReservationObject = {
 /*
 TODO:
     * Extract steps to helper functions
-    * Add support for return code: 500/404/409
     * Need to check if user exists in the DB
 */
-
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const TTL_TIME_IN_SECONDS = 60;
 
@@ -302,7 +301,6 @@ export class TicketService {
         //      call needs private key, price, currency, 
         //      optional: description, receipt email, statement description, 
         console.log(`[createPaymentIntent] Creating Payment Intent with payment method: ${getStripePaymentMethodFromEnum(payment_method)}`)
-        const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
 
         let payment_intent: PaymentIntent;
         let payment_failed: Boolean = false;

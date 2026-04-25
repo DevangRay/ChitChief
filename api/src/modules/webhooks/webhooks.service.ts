@@ -76,9 +76,9 @@ export class WebhooksService {
             }
         })
 
-        if (sold_seats.length !== connected_seat_ids.length || !sold_seats[0]?.event_id) {
+        if (sold_seats.length !== connected_seat_ids.length || (connected_seat_ids.length > 0 && !sold_seats[0]?.event_id)) {
             console.log('[handleSuccess] ERROR: Seats are in an invalid state. Reverting Order process.');
-            const stripe = Stripe(process.env.STRIPE_SECRET_KEY!)
+            const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
             const order_refund = await stripe.refunds.create({
                 payment_intent: payment_intent
             })
