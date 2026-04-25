@@ -12,6 +12,7 @@ export async function buildApp() {
 
     await app.register(prismaPlugin);
     await app.register(redisPlugin);
+    await app.register(authRoutes, { prefix: "/auth" })
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
     await app.register(webhookRoutes, { prefix: "/webhooks" })
