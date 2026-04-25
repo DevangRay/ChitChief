@@ -1,4 +1,4 @@
-import { createPrismaClient } from "../src/lib/prisma-factory";
+import { createPrismaClient } from "../src/lib/prisma-factory.js";
 
 async function main() {
     const prisma = createPrismaClient(process.env.DATABASE_URL!);

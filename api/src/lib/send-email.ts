@@ -1,6 +1,6 @@
 import "dotenv/config"; // Ensure environment variables are loaded
 import { Resend } from 'resend';
-import EmailError from './custom_errors/EmailError';
+import EmailError from './custom_errors/EmailError.js';
 
 const resend = new Resend(process.env.RESEND_SECRET_KEY);
 

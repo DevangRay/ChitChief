@@ -1,5 +1,5 @@
-import { FastifySchema } from "fastify";
-import { eventSchema, seatSchema } from "../../lib/schema-constants";
+import { type FastifySchema } from "fastify";
+import { eventSchema, seatSchema } from "../../lib/schema-constants.js";
 
 // GET /events
 export const getEventsSchema: FastifySchema = {

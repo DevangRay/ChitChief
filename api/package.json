@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "vitest run",
     "test:events:unit": "vitest run ./src/modules/events/events.service.unit.test.ts",

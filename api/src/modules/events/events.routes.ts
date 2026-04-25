@@ -1,6 +1,6 @@
-import { FastifyInstance } from "fastify";
-import { getEventsSchema, getEventByIdSchema, getSeatsOfEventByIdSchema } from "./events.schema";
-import EventsService from "./events.service";
+import { type FastifyInstance } from "fastify";
+import { getEventsSchema, getEventByIdSchema, getSeatsOfEventByIdSchema } from "./events.schema.js";
+import EventsService from "./events.service.js";
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new EventsService(fastify.prisma);

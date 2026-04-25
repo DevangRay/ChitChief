@@ -1,4 +1,4 @@
-import ForbiddenError from "./custom_errors/ForbiddenError";
+import ForbiddenError from "./custom_errors/ForbiddenError.js";
 
 export enum PaymentMethod {
     "SUCCESS_VISA" = "pm_card_visa",

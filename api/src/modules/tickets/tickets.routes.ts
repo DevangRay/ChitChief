@@ -1,11 +1,11 @@
-import { FastifyInstance } from "fastify";
-import { TicketService } from "./tickets.service";
-import { reserveTicketSchema, createPaymentIntentSchema, getIdempotencyKeyForDemo } from "./tickets.schema";
-import { PaymentMethodKey } from "../../lib/payment-method";
-import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
-import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
-import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
-import ConflictError from "../../lib/custom_errors/ConflictError";
+import { type FastifyInstance } from "fastify";
+import { TicketService } from "./tickets.service.js";
+import { reserveTicketSchema, createPaymentIntentSchema, getIdempotencyKeyForDemo } from "./tickets.schema.js";
+import { type PaymentMethodKey } from "../../lib/payment-method.js";
+import SeatConflictError from "../../lib/custom_errors/SeatConflictError.js";
+import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError.js";
+import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
+import ConflictError from "../../lib/custom_errors/ConflictError.js";
 import Stripe from "stripe";
 
 type ReserveTicketRequestBody = {
@@ -71,7 +71,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         } catch (error) {
             const printable_error = (error as Error).message;
             console.log("[tickets.routes /reserve]: Unplanned error: ", printable_error);
-            fastify.log.error(error, '[GET /reserve] Failed to reserve seats');
+            fastify.log.error(error, '[POST /reserve] Failed to reserve seats');
             return reply.status(500).send({ message: 'Internal server error.' });
         }
     });

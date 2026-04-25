@@ -1,13 +1,13 @@
 import { Worker } from 'bullmq';
-import { createPrismaClient } from './lib/prisma-factory';
-import IORedis from 'ioredis';
+import { createPrismaClient } from './lib/prisma-factory.js';
+import { Redis } from 'ioredis';
 import { OrderStatus, SeatStatus } from '@prisma/client';
-import { seatLockFromId } from './lib/redis-keys';
+import { seatLockFromId } from './lib/redis-keys.js';
 import 'dotenv/config';
-import { getDateForLogs } from './lib/date-formatter';
-import { sendPostPaymentEmail } from './lib/send-email';
+import { getDateForLogs } from './lib/date-formatter.js';
+import { sendPostPaymentEmail } from './lib/send-email.js';
 
-const connection = new IORedis(
+const connection = new Redis(
     process.env.REDIS_URL!,
     {
         maxRetriesPerRequest: null, // Required for BullMQ

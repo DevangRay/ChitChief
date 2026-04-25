@@ -1,7 +1,7 @@
-import { FastifyInstance } from "fastify";
+import { type FastifyInstance } from "fastify";
 import Stripe from "stripe";
-import { WebhooksService } from "./webhooks.service";
-import { confirmPaymentSchema } from "./webhooks.schema";
+import { WebhooksService } from "./webhooks.service.js";
+import { confirmPaymentSchema } from "./webhooks.schema.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 

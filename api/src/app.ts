@@ -1,10 +1,11 @@
 // app.ts
 import Fastify from 'fastify';
-import prismaPlugin from './plugins/prisma';
-import redisPlugin from './plugins/redis'
-import eventsRoutes from "./modules/events/events.routes";
-import ticketsRoutes from "./modules/tickets/tickets.routes";
-import webhookRoutes from "./modules/webhooks/webhooks.routes";
+import prismaPlugin from './plugins/prisma.js';
+import redisPlugin from './plugins/redis.js'
+import authRoutes from "./modules/auth/auth.routes.js"
+import eventsRoutes from "./modules/events/events.routes.js";
+import ticketsRoutes from "./modules/tickets/tickets.routes.js";
+import webhookRoutes from "./modules/webhooks/webhooks.routes.js";
 
 export async function buildApp() {
     const app = Fastify({ logger: true });

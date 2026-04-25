@@ -1,14 +1,14 @@
-import { OrderStatus, PrismaClient, Seat, SeatStatus } from "@prisma/client"
+import { OrderStatus, PrismaClient, SeatStatus, type Seat } from "@prisma/client"
 import { Queue } from "bullmq"
 import * as jwt from 'jsonwebtoken';
-import Redis from "ioredis";
+import type { Redis } from "ioredis";
 import Stripe from 'stripe';
-import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys";
-import { getStripePaymentMethodFromEnum, PaymentMethodKey } from "../../lib/payment-method";
-import SeatConflictError from "../../lib/custom_errors/SeatConflictError";
-import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError";
-import ForbiddenError from "../../lib/custom_errors/ForbiddenError";
-import ConflictError from "../../lib/custom_errors/ConflictError";
+import { seatIdFromLock, seatLockFromId } from "../../lib/redis-keys.js";
+import { getStripePaymentMethodFromEnum, type PaymentMethodKey } from "../../lib/payment-method.js";
+import SeatConflictError from "../../lib/custom_errors/SeatConflictError.js";
+import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError.js";
+import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
+import ConflictError from "../../lib/custom_errors/ConflictError.js";
 
 type PaymentIntent = {
     id: string | undefined,

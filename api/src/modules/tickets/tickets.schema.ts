@@ -1,5 +1,5 @@
-import { FastifySchema } from "fastify";
-import { PaymentMethod } from "../../lib/payment-method";
+import { type FastifySchema } from "fastify";
+import { PaymentMethod } from "../../lib/payment-method.js";
 
 // POST /reserve
 export const reserveTicketSchema: FastifySchema = {

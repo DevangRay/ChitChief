@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import { FastifyInstance } from "fastify";
+import { type FastifyInstance } from "fastify";
 import fp from 'fastify-plugin';
-import { createPrismaClient } from "../lib/prisma-factory";
+import { createPrismaClient } from "../lib/prisma-factory.js";
 
 declare module 'fastify' {
     interface FastifyInstance {

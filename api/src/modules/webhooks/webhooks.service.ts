@@ -1,8 +1,8 @@
 import { OrderStatus, PrismaClient, SeatStatus } from "@prisma/client"
-import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError"
-import { formatSeats } from "../../lib/send-email";
+import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError.js"
+import { formatSeats } from "../../lib/send-email.js";
 import { Queue } from "bullmq"
-import Redis from "ioredis";
+import {type Redis} from "ioredis";
 import Stripe from 'stripe';
 
 export class WebhooksService {
