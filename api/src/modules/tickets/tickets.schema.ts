@@ -47,6 +47,13 @@ export const reserveTicketSchema: FastifySchema = {
                     }
                 }
             }
+        },
+        500: {
+            description: "Internal server error",
+            type: "object",
+            properties: {
+                message: { type: "string" }
+            }
         }
     }
 }
@@ -103,6 +110,13 @@ export const createPaymentIntentSchema: FastifySchema = {
             properties: {
                 client_secret: { type: "string" },
                 order_id: { type: "string" }
+            }
+        },
+        402: {
+            description: "Error from a failed payment method when confirming PaymentIntent",
+            type: "object",
+            properties: {
+                message: { type: "string" }
             }
         },
         403: {
