@@ -5,6 +5,7 @@ import { OrderStatus, SeatStatus } from '@prisma/client';
 import { seatLockFromId } from './lib/redis-keys';
 import 'dotenv/config';
 import { getDateForLogs } from './lib/date-formatter';
+import { sendPostPaymentEmail } from './lib/send-email';
 
 const connection = new IORedis(
     process.env.REDIS_URL!,
@@ -101,6 +102,22 @@ const worker = new Worker(
             });
 
             console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Reset Order ${order_id} to EXPIRED and set ${seat_ids.length} seat(s) to AVAILABLE.`);
+        } else if (job.name === "send_success_message") {
+            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Processing send_success_message job with data:`, job.data);
+            const { email_target, order_id, event_name, seats } = job.data;
+
+            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Sending success email to:`, email_target);
+
+            const email_result = await sendPostPaymentEmail(true, email_target, order_id, event_name, seats);
+            console.log(`[worker: ${getDateForLogs()} | SEND_SUCCESS_MESSAGE] Sent success email with result:`, email_result);
+        } else if (job.name === "send_failure_message") {
+            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Processing send_failure_message job with data:`, job.data);
+            const { email_target, order_id, event_name, seats } = job.data;
+
+            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sending success email to:`, email_target);
+
+            const email_result = await sendPostPaymentEmail(false, email_target, order_id, event_name, seats);
+            console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sent success email with result:`, email_result);
         }
     },
     { connection }

@@ -5,9 +5,9 @@ export enum PaymentMethod {
     "SUCCESS_VISA_DEBIT" = "pm_card_visa_debit",
     "SUCCESS_MASTERCARD" = "pm_card_mastercard",
     "AUTH_REQUIRED" = "pm_card_authenticationRequired",
-    "FAIL_DECLINED" = "pm_card_declined",
-    "FAIL_INSUFFICIENT_FUNDS" = "pm_card_insufficientFunds",
-    "FAIL_CUSTOMER_CHARGED" ="pm_card_chargeCustomerFail"
+    "FAIL_DECLINED" = "pm_card_visa_chargeDeclined",
+    "FAIL_INSUFFICIENT_FUNDS" = "pm_card_visa_chargeDeclinedInsufficientFunds",
+    "FAIL_CUSTOMER_CHARGED" = "pm_card_chargeCustomerFail"
 }
 
 export type PaymentMethodKey = keyof typeof PaymentMethod;

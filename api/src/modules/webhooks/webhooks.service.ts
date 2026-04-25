@@ -1,13 +1,14 @@
 import { OrderStatus, PrismaClient, SeatStatus } from "@prisma/client"
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError"
+import { formatSeats } from "../../lib/send-email";
 import { Queue } from "bullmq"
 import Redis from "ioredis";
 import Stripe from 'stripe';
 
 export class WebhooksService {
-    private readonly test_reservation_queue: Queue;
+    private readonly reservation_queue: Queue;
     constructor(private readonly prisma: PrismaClient, private readonly redis: Redis) {
-        this.test_reservation_queue = new Queue('reservations', {
+        this.reservation_queue = new Queue('reservations', {
             connection: this.redis
         });
     }
@@ -63,7 +64,7 @@ export class WebhooksService {
         const connected_seat_ids: string[] = connected_seats.map((order_seats) => order_seats.seat_id)
         console.log('[handleSuccess] Connected seat ids:', connected_seat_ids)
 
-        const sold_seats = await this.prisma.seat.updateMany({
+        const sold_seats = await this.prisma.seat.updateManyAndReturn({
             where: {
                 id: {
                     in: connected_seat_ids
@@ -75,7 +76,7 @@ export class WebhooksService {
             }
         })
 
-        if (sold_seats.count !== connected_seat_ids.length) {
+        if (sold_seats.length !== connected_seat_ids.length || !sold_seats[0]?.event_id) {
             console.log('[handleSuccess] ERROR: Seats are in an invalid state. Reverting Order process.');
             const stripe = Stripe(process.env.STRIPE_SECRET_KEY!)
             const order_refund = await stripe.refunds.create({
@@ -110,6 +111,30 @@ export class WebhooksService {
         }
 
         console.log('[handleSuccess] Updated Seats to:', sold_seats)
+        const ordered_seats = sold_seats.map((seat) => formatSeats(seat.row, seat.number))
+
+        console.log("[handleSuccess] Adding job to send status email")
+        const associated_event = await this.prisma.event.findUnique({
+            where: {
+                id: sold_seats[0]?.event_id
+            }
+        })
+        console.log("[handleSuccess] Retrieved associated_event:", associated_event);
+
+
+        await this.reservation_queue.add(
+            'send_success_message',
+            {
+                email_target: 'devangray624@gmail.com',
+                order_id: completed_order.id,
+                event_name: `"${associated_event?.name}: ${associated_event?.description}"`,
+                seats: ordered_seats
+            },
+            {
+                delay: 0, //delay in milliseconds
+            }
+        );
+        console.log("[handleSuccess] Job enqueued.")
     }
 
     async handleFailure(user_uuid: string | undefined, idempotency_key: string | undefined): Promise<void> {
@@ -131,7 +156,7 @@ export class WebhooksService {
 
 
         // update order_status in Order
-        console.log('[handleFailure] Updating Order to Expired.')
+        console.log('[handleFailure] Updating Order to Failed.')
         const expired_order = await this.prisma.order.update({
             where: {
                 user_id: user_uuid,
@@ -145,6 +170,35 @@ export class WebhooksService {
 
         // Only the update needs to be updated. The BullMQ job will update seats once the TTL expires, or the user has a chance to resubmit a payment
 
-        // TODO: enqueue follow-up job (e.g. notify user, cleanup)
+        // Enqueue job to notify user
+        console.log("[handleFailure] Adding job to send status email")
+        const order_seats_join_object = await this.prisma.orderSeats.findMany({
+            where: {
+                order_id: expired_order.id
+            },
+            include: {
+                seat: {
+                    include: {
+                        event: true
+                    }
+                }
+            }
+        })
+        console.log("[handleFailure] Retrieved orderSeats:", order_seats_join_object)
+        const ordered_seats = order_seats_join_object.map((seat_order) => formatSeats(seat_order.seat.row, seat_order.seat.number))
+
+        await this.reservation_queue.add(
+            'send_failure_message',
+            {
+                email_target: 'devangray624@gmail.com',
+                order_id: expired_order.id,
+                event_name: `"${order_seats_join_object[0]?.seat.event.name}: ${order_seats_join_object[0]?.seat.event.description}"`,
+                seats: ordered_seats
+            },
+            {
+                delay: 0, //delay in milliseconds
+            }
+        );
+        console.log("[handleFailure] Job enqueued.")
     }
 }
