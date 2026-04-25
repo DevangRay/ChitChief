@@ -12,16 +12,34 @@
     * `npx prisma db seed`
 * Connect Stripe webhook
     * `stripe listen --forward-to localhost:3000/webhooks/payment/confirm`
+* Resend emails
+    * https://resend.com/emails
+    * https://mxtoolbox.com/SuperTool.aspx?action=dmarc%3adevangray.dev&run=toolpage
 ---
 DB Schema 
 * https://dbdocs.io/devangray624/ChitChief-DB-Schema
 ---
+
+This backend demo focuses on:
+* High-concurrency seat reservation (100+ simultaneous users)
+* Race condition handling with pessimistic locking
+* Distributed job processing with BullMQ
+* Idempotent payment processing
+* Comprehensive test coverage with testcontainers
+
 Limitations
+* I used a single Redis instance for simplicity, but I'm aware this creates a single point of failure. In production I'd use Redis Cluster or the Redlock algorithm across multiple nodes to ensure lock durability if a node fails mid-operation.
 * For demo purposes I collapsed the PaymentIntent creation and confirmation into a single call : POST /tickets/purchase/intent
     * In production I would split this up.
         * POST /tickets/puchase/intent would create the PaymentIntent and return the client_secret.
         * Client-side would use something like Stripe.js to get payment information and confirm the payment
     * The webhook POST /ticekts/purchase/confirm still exists to handle orders after confirmation (handling both success and error)
+* 3DS authentication requires customer interaction and is out of scope for a backend-only demo. In production, this would be handled with either:
+    * Stripe Checkout (hosted pages)
+    * Frontend integration with Stripe.js
+    * Mobile app with Stripe SDK
+
+Payments requiring 3DS are marked as failed and seats released
 ---
 Goals
 * Distributed seat locking with Redis + TTL
@@ -165,5 +183,3 @@ Testing
 * E2E tests
     * full http request through Fastify with Supertest
 ---
-Redis
-* "I used a single Redis instance for simplicity, but I'm aware this creates a single point of failure. In production I'd use Redis Cluster or the Redlock algorithm across multiple nodes to ensure lock durability if a node fails mid-operation."
