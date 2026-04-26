@@ -457,7 +457,7 @@ describe('AuthService.login — behavior', () => {
     describe('already validated — existing active session', () => {
 
         describe('equivalence cases', () => {
-            it('signals the user is already validated when a non-expired refresh token exists', async () => {
+            it('returns correct object when a non-expired refresh token exists', async () => {
                 const { service } = buildService({
                     existingUser: makeUser(),
                     existingToken: makeRefreshToken(),   // valid, non-expired
@@ -465,7 +465,7 @@ describe('AuthService.login — behavior', () => {
 
                 const result = await service.login(USER_NAME, PASSWORD);
 
-                expect(result).toHaveProperty('already_validated', true);
+                expect(result).toMatchObject(EXPECTED_AUTH_RETURN_OBJECT);
             });
 
             it('does not issue new tokens when a valid session is already active', async () => {
