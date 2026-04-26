@@ -102,18 +102,6 @@ export class AuthService {
         )
         console.log("[registerUser] Queued remove_refresh_token job.");
 
-        // TEST
-        console.log("[registerUser] TEST: Queueing reset job");
-        this.reservation_queue.add(
-            'remove_added_user',
-            { user_id: user_result.id },
-            {
-                delay: 30 * 1000
-            }
-        )
-        console.log("[registerUser] Queued reset job.");
-        // END TEST
-
         return {
             access_token: signed_token,
             refresh_token: refresh_token.token,
