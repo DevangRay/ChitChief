@@ -7,6 +7,7 @@ import authRoutes from "./modules/auth/auth.routes.js"
 import eventsRoutes from "./modules/events/events.routes.js";
 import ticketsRoutes from "./modules/tickets/tickets.routes.js";
 import webhookRoutes from "./modules/webhooks/webhooks.routes.js";
+import usersRoutes from "./modules/users/users.routes.js";
 
 export async function buildApp() {
     const app = Fastify({ logger: true });
@@ -19,7 +20,7 @@ export async function buildApp() {
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
     await app.register(webhookRoutes, { prefix: "/webhooks" })
-    // routes will be registered here later
+    await app.register(usersRoutes, { prefix: "/users" })
 
     return app
 }
