@@ -7,6 +7,7 @@
   "scripts": {
     "test": "vitest run",
     "test:users:unit": "vitest run ./src/modules/users/users.service.unit.test.ts",
+    "test:users:e2e": "vitest run ./src/modules/users/users.routes.e2e.test.ts",
     "test:auth:unit": "vitest run ./src/modules/auth/auth.service.unit.test.ts",
     "test:auth:e2e": "vitest run ./src/modules/auth/auth.routes.e2e.test.ts",
     "test:events:unit": "vitest run ./src/modules/events/events.service.unit.test.ts",
