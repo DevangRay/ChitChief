@@ -115,7 +115,7 @@ export const logoutSchema: FastifySchema = {
     response: {
         204: {
             description: "User was successfully logged-out.",
-            type: "null"
+            type: 'null'
         },
         404: {
             description: "The provided resource_token was invalid.",

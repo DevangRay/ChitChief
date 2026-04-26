@@ -1,5 +1,6 @@
 // app.ts
 import Fastify from 'fastify';
+import swaggerPlugin from './plugins/swagger.js';
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js'
 import authRoutes from "./modules/auth/auth.routes.js"
@@ -12,6 +13,8 @@ export async function buildApp() {
 
     await app.register(prismaPlugin);
     await app.register(redisPlugin);
+    await app.register(swaggerPlugin);
+
     await app.register(authRoutes, { prefix: "/auth" })
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
