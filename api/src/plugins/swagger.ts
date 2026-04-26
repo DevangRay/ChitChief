@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import type { FastifyInstance } from 'fastify';
+import "dotenv/config"; // Ensure environment variables are loaded
 
 async function swaggerPlugin(fastify: FastifyInstance) {
     await fastify.register(swagger, {
@@ -12,7 +13,7 @@ async function swaggerPlugin(fastify: FastifyInstance) {
                 description: 'ChitChief ticketing platform API',
                 version: '1.0.0',
             },
-            servers: [{ url: 'http://localhost:3000' }],
+            servers: [{ url: `${process.env.BACKEND_SERVER_URL}` }],
             components: {
                 securitySchemes: {
                     bearerAuth: {
