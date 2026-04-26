@@ -13,7 +13,7 @@ async function swaggerPlugin(fastify: FastifyInstance) {
                 description: 'ChitChief ticketing platform API',
                 version: '1.0.0',
             },
-            servers: [{ url: `${process.env.BACKEND_SERVER_URL}` }],
+            servers: [{ url: `${process.env.BACKEND_SERVER_HOST}:${process.env.BACKEND_SERVER_POST}` }],
             components: {
                 securitySchemes: {
                     bearerAuth: {
