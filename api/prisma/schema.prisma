@@ -25,7 +25,7 @@ model User {
 model RefreshToken {
   id String @id @default(uuid())
   token String @unique @default(uuid())
-  user_id String
+  user_id String @unique
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
   expires_at DateTime @default(dbgenerated("NOW() + INTERVAL '1 minute'"))
   created_at DateTime @default(now())
