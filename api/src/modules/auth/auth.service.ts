@@ -21,15 +21,15 @@ export class AuthService {
     async registerUser(user_name: string, email: string, password: string) {
         console.log("[registerUser] Validating parameters.");
         if (!user_name) {
-            console.log("[registerUser] No user_name provided for reservation.");
+            console.log("[registerUser] No user_name provided.");
             throw new ResourceNotFoundError("No user_name provided.")
         }
         if (!email) {
-            console.log("[registerUser] No email provided for reservation.");
+            console.log("[registerUser] No email provided.");
             throw new ResourceNotFoundError("No email provided.")
         }
         if (!password) {
-            console.log("[registerUser] No password provided for reservation.");
+            console.log("[registerUser] No password provided.");
             throw new ResourceNotFoundError("No password provided.")
         }
         console.log("[registerUser] Parameter validation successful.");
@@ -100,11 +100,11 @@ export class AuthService {
     async login(user_name: string, password: string) {
         console.log("[login] Validating parameters.");
         if (!user_name) {
-            console.log("[login] No user_name provided for reservation.");
+            console.log("[login] No user_name provided for.");
             throw new ResourceNotFoundError("No user_name provided.")
         }
         if (!password) {
-            console.log("[login] No password provided for reservation.");
+            console.log("[login] No password provided for.");
             throw new ResourceNotFoundError("No password provided.")
         }
         console.log("[login] Parameter validation successful.");
@@ -176,5 +176,35 @@ export class AuthService {
             access_token: signed_token,
             refresh_token: refresh_token.token,
         }
+    }
+
+    async logout(refresh_token: string) {
+        console.log("[logout] Validating parameters.");
+        if (!refresh_token) {
+            console.log("[logout] No refresh_token provided.");
+            throw new ResourceNotFoundError("No refresh_token provided.")
+        }
+        console.log("[logout] Parameter validation successful.");
+
+        // retrieve RefreshToken
+        const refresh_token_exists = await this.prisma.refreshToken.findUnique({
+            where: {
+                token: refresh_token
+            }
+        })
+        if (!refresh_token_exists || refresh_token_exists.expires_at.getTime() < Date.now()) {
+            throw new ForbiddenError("User session does not exist.")
+        }
+
+        // delete RefreshToken
+        console.log("[logout] Deleting refresh token.");
+        const deleted_refresh_token = await this.prisma.refreshToken.delete({
+            where: {
+                token: refresh_token
+            }
+        })
+        console.log("[logout] Succesfully deleted token:", deleted_refresh_token);
+
+        return
     }
 }

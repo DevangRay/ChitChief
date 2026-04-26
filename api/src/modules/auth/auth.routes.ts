@@ -6,6 +6,13 @@ type RegisterRequestBody = {
     email: string,
     password: string
 }
+type LoginRequestBody = {
+    user_name: string,
+    password: string
+}
+type LogoutRequestBody = {
+    refresh_token: string
+}
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new AuthService(fastify.prisma, fastify.redis);
@@ -33,8 +40,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
     fastify.post("/login", async (request, reply) => {
         try {
-            console.dir(request.body)
-            const request_body = request.body as RegisterRequestBody;
+            const request_body = request.body as LoginRequestBody;
             const user_name = request_body.user_name;
             const password = request_body.password;
 
@@ -45,6 +51,23 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
             console.log("[auth.routes /login]: Unplanned error: ", printable_error);
             fastify.log.error(error, '[POST /login] Failed to Log In');
+
+            return reply.status(500).send({ message: 'Internal server error.' });
+        }
+    })
+
+    fastify.post("/logout", async (request, reply) => {
+        try {
+            const request_body = request.body as LogoutRequestBody;
+            const refresh_token = request_body.refresh_token;
+
+            await service.logout(refresh_token);
+            return reply.status(204).send();
+        } catch (error) {
+            const printable_error = (error as Error).message;
+
+            console.log("[auth.routes /logout]: Unplanned error: ", printable_error);
+            fastify.log.error(error, '[POST /logout] Failed to Log Out');
 
             return reply.status(500).send({ message: 'Internal server error.' });
         }
