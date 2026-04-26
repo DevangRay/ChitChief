@@ -13,6 +13,10 @@ type LoginRequestBody = {
 type LogoutRequestBody = {
     refresh_token: string
 }
+type RefreshRequestBody = {
+    jwt_token: string,
+    refresh_token: string
+}
 
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new AuthService(fastify.prisma, fastify.redis);
@@ -68,6 +72,24 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
             console.log("[auth.routes /logout]: Unplanned error: ", printable_error);
             fastify.log.error(error, '[POST /logout] Failed to Log Out');
+
+            return reply.status(500).send({ message: 'Internal server error.' });
+        }
+    })
+
+    fastify.post("/refresh", async (request, reply) => {
+        try {
+            const request_body = request.body as RefreshRequestBody;
+            const jwt_token = request_body.jwt_token;
+            const refresh_token = request_body.refresh_token;
+
+            const result = await service.refresh(jwt_token, refresh_token);
+            return reply.status(200).send(result);
+        } catch (error) {
+            const printable_error = (error as Error).message;
+
+            console.log("[auth.routes /refresh]: Unplanned error: ", printable_error);
+            fastify.log.error(error, '[POST /refresh] Failed to Log Out');
 
             return reply.status(500).send({ message: 'Internal server error.' });
         }

@@ -91,6 +91,29 @@ export class AuthService {
             }
         );
 
+        console.log("[registerUser] Queueing job to delete token after TTL");
+        this.reservation_queue.add(
+            'remove_refresh_token',
+            { refresh_token_id: refresh_token.id },
+            {
+                // have to check TTL from schema (done through Postgres)
+                delay: 60 * 1000
+            }
+        )
+        console.log("[registerUser] Queued remove_refresh_token job.");
+
+        // TEST
+        console.log("[registerUser] TEST: Queueing reset job");
+        this.reservation_queue.add(
+            'remove_added_user',
+            { user_id: user_result.id },
+            {
+                delay: 30 * 1000
+            }
+        )
+        console.log("[registerUser] Queued reset job.");
+        // END TEST
+
         return {
             access_token: signed_token,
             refresh_token: refresh_token.token,
@@ -187,14 +210,18 @@ export class AuthService {
         console.log("[logout] Parameter validation successful.");
 
         // retrieve RefreshToken
+        console.log("[logout] Checking that refresh token exists.");
         const refresh_token_exists = await this.prisma.refreshToken.findUnique({
             where: {
                 token: refresh_token
             }
         })
         if (!refresh_token_exists || refresh_token_exists.expires_at.getTime() < Date.now()) {
+            // since job is queued to delete token, expiration is a fringe case. still good to catch here out of an abundance of caution
+            console.log("[logout] Refresh token was invalid or expired.");
             throw new ForbiddenError("User session does not exist.")
         }
+        console.log("[logout] Got refresh token:", refresh_token_exists);
 
         // delete RefreshToken
         console.log("[logout] Deleting refresh token.");
@@ -206,5 +233,86 @@ export class AuthService {
         console.log("[logout] Succesfully deleted token:", deleted_refresh_token);
 
         return
+    }
+
+    async refresh(jwt_token: string, refresh_token: string) {
+        console.log("[refresh] Validating parameters.");
+        if (!jwt_token) {
+            console.log("[refresh] No jwt_token provided for.");
+            throw new ResourceNotFoundError("No jwt_token provided.")
+        }
+        if (!refresh_token) {
+            console.log("[refresh] No refresh_token provided for.");
+            throw new ResourceNotFoundError("No refresh_token provided.")
+        }
+        console.log("[refresh] Parameter validation successful.");
+
+        // check refresh_token
+        console.log("[refresh] Checking refresh token exists.");
+        const refresh_token_exists = await this.prisma.refreshToken.findUnique({
+            where: {
+                token: refresh_token
+            },
+            include: {
+                user: true
+            }
+        })
+        if (!refresh_token_exists) {
+        console.log("[refresh] Refresh token does not exist.");
+            throw new ResourceNotFoundError("Invalid refresh token.");
+        }
+        console.log("[refresh] Retrieved token:", refresh_token_exists);
+
+        const user_id = refresh_token_exists.user.id;
+        const user_email = refresh_token_exists.user.email;
+
+        // delete refresh_token
+        console.log("[refresh] Deleting refresh token.");
+        const deleted_refresh_token = await this.prisma.refreshToken.delete({
+            where: {
+                token: refresh_token
+            }
+        })
+        console.log("[refresh] Deleted token:", deleted_refresh_token);
+
+        // create new refresh_token
+        console.log("[refresh] Creating rotated refresh token.");
+        const rotated_refresh_token = await this.prisma.refreshToken.create({
+            data: {
+                user_id: user_id
+            }
+        })
+        console.log("[refresh] Rotated refresh token:", rotated_refresh_token);
+
+        // return new jwt_token and refresh_token
+        console.log("[refresh] Creating new JWT token and returning");
+        const signable_payload = {
+            user_id: user_id,
+            user_email: user_email
+        }
+        const signed_token = jwt.sign(
+            signable_payload,
+            process.env.SIGNING_SECRET!,
+            {
+                // time must be given in seconds
+                expiresIn: ACCESS_TOKEN_TTL_IN_MINUTES * 60
+            }
+        );
+
+        console.log("[registerUser] Queueing job to delete token after TTL");
+        this.reservation_queue.add(
+            'remove_refresh_token',
+            { refresh_token_id: rotated_refresh_token.id },
+            {
+                // have to check TTL from schema (done through Postgres)
+                delay: 60 * 1000
+            }
+        )
+        console.log("[registerUser] Queued remove_refresh_token job.");
+
+        return {
+            access_token: signed_token,
+            refresh_token: rotated_refresh_token.token,
+        }
     }
 }

@@ -86,6 +86,26 @@ const worker = new Worker(
 
             const email_result = await sendPostPaymentEmail(false, email_target, order_id, event_name, seats);
             console.log(`[worker: ${getDateForLogs()} | SEND_FAILURE_MESSAGE] Sent success email with result:`, email_result);
+        } else if (job.name === "remove_refresh_token") {
+            console.log(`[worker: ${getDateForLogs()} | REMOVE_REFRESH_TOKEN] Processing remove_refresh_token job with data:`, job.data);
+            const { refresh_token_id } = job.data;
+
+            const token_exists = await prisma.refreshToken.findUnique({
+                where: {
+                    id: refresh_token_id
+                }
+            })
+            if (!token_exists) {
+                console.log(`[worker: ${getDateForLogs()} | REMOVE_REFRESH_TOKEN] RefreshToken already removed`);
+                return;
+            }
+
+            const deleted_user = await prisma.refreshToken.delete({
+                where: {
+                    id: refresh_token_id
+                }
+            })
+            console.log(`[worker: ${getDateForLogs()} | REMOVE_REFRESH_TOKEN] Deleted Refresh Token:`, deleted_user);
         } else if (job.name === "reset_successful_orders") {
             console.log(`[worker: ${getDateForLogs()} | RESET_SUCCESSFUL_ORDERS] Processing reset_successful_orders job with data:`, job.data);
             const { order_id } = job.data;
