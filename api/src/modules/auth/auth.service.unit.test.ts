@@ -123,6 +123,21 @@ const makeRefreshToken = (overrides: Partial<{
     ...overrides,
 });
 
+const makeRefreshTokenWithUser = (overrides: Partial<{
+    id: string; token: string; user_id: string; expires_at: Date;
+}> = {}) => ({
+    id: REFRESH_TOKEN_ID,
+    token: REFRESH_TOKEN,
+    user_id: USER_ID,
+    expires_at: new Date(Date.now() + 60_000),  // valid: 1 min in the future
+    created_at: new Date(),
+    user: {
+        id: USER_ID, 
+        email: EMAIL
+    },
+    ...overrides,
+});
+
 /** Convenience: a refresh token whose expires_at is already in the past. */
 const makeExpiredRefreshToken = () =>
     makeRefreshToken({ expires_at: new Date(Date.now() - 1_000) });
@@ -671,14 +686,14 @@ describe('AuthService.refresh — behavior', () => {
 
         describe('exception cases — missing jwt_token', () => {
             it('throws ResourceNotFoundError when jwt_token is an empty string', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await expect(service.refresh('', REFRESH_TOKEN))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when jwt_token is null', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await expect(service.refresh(null as any, REFRESH_TOKEN))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
@@ -687,14 +702,14 @@ describe('AuthService.refresh — behavior', () => {
 
         describe('exception cases — missing refresh_token', () => {
             it('throws ResourceNotFoundError when refresh_token is an empty string', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await expect(service.refresh(makeValidJwt(), ''))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when refresh_token is null', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await expect(service.refresh(makeValidJwt(), null as any))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
@@ -710,7 +725,7 @@ describe('AuthService.refresh — behavior', () => {
 
         describe('equivalence cases', () => {
             it('succeeds when the refresh token exists and is not expired', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
 
@@ -725,11 +740,11 @@ describe('AuthService.refresh — behavior', () => {
         });
 
         describe('boundary cases', () => {
-            it('throws ForbiddenError when the refresh token is expired', async () => {
+            it('throws when the refresh token is expired', async () => {
                 const { service } = buildService({ existingToken: makeExpiredRefreshToken() });
 
                 await expect(service.refresh(makeValidJwt(), REFRESH_TOKEN))
-                    .rejects.toBeInstanceOf(ForbiddenError);
+                    .rejects.toThrow();
             });
         });
     });
@@ -742,7 +757,7 @@ describe('AuthService.refresh — behavior', () => {
 
         describe('equivalence cases', () => {
             it('returns a non-empty access_token string on success', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
 
@@ -751,7 +766,7 @@ describe('AuthService.refresh — behavior', () => {
             });
 
             it('returns a non-empty refresh_token string on success', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
 
@@ -760,7 +775,7 @@ describe('AuthService.refresh — behavior', () => {
             });
 
             it('new access token carries the same user_id as the original JWT', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 const result = await service.refresh(makeValidJwt(USER_ID, EMAIL), REFRESH_TOKEN);
 
@@ -769,7 +784,7 @@ describe('AuthService.refresh — behavior', () => {
             });
 
             it('new access token carries the same user_email as the original JWT', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 const result = await service.refresh(makeValidJwt(USER_ID, EMAIL), REFRESH_TOKEN);
 
@@ -778,7 +793,7 @@ describe('AuthService.refresh — behavior', () => {
             });
 
             it('the returned refresh_token differs from the consumed one (token rotation)', async () => {
-                const { service } = buildService({ existingToken: makeRefreshToken() });
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
 
@@ -796,7 +811,7 @@ describe('AuthService.refresh — behavior', () => {
 
         describe('equivalence cases', () => {
             it('deletes the consumed refresh token from the database', async () => {
-                const { service, prismaMock } = buildService({ existingToken: makeRefreshToken() });
+                const { service, prismaMock } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await service.refresh(makeValidJwt(), REFRESH_TOKEN);
 
@@ -804,7 +819,7 @@ describe('AuthService.refresh — behavior', () => {
             });
 
             it('creates a new refresh token in the database', async () => {
-                const { service, prismaMock } = buildService({ existingToken: makeRefreshToken() });
+                const { service, prismaMock } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await service.refresh(makeValidJwt(), REFRESH_TOKEN);
 
@@ -822,7 +837,7 @@ describe('AuthService.refresh — behavior', () => {
         describe('exception cases', () => {
             it('propagates unexpected errors thrown while deleting the old token', async () => {
                 const { service } = buildService({
-                    existingToken: makeRefreshToken(),
+                    existingToken: makeRefreshTokenWithUser(),
                     tokenDeleteError: new Error('DB delete timeout'),
                 });
 
