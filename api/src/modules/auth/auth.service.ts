@@ -110,22 +110,29 @@ export class AuthService {
         console.log("[login] Parameter validation successful.");
 
         // get user from DB
+        console.log("[login] Retrieving user from DB.");
         const existing_user = await this.prisma.user.findUnique({
             where: {
                 username: user_name
             }
         })
         if (!existing_user) {
+            console.log("[login] No user found.");
             throw new ResourceNotFoundError("No user is connected");
         }
+        console.log("[login] Found user:", existing_user);
 
         // compare password with hash
+        console.log("[login] Checking password.");
         const is_password_correct = await compare(password, existing_user.password_hash);
         if (!is_password_correct) {
+            console.log("[login] Password is incorrect.");
             throw new ForbiddenError("Invalid password");
         }
+        console.log("[login] Password is valid. Reauthorizing successful.");
 
-        // check user not already logged in
+        // check userF not already logged in
+        console.log("[login] Checking for existing Refresh Token.");
         const does_session_exist = await this.prisma.refreshToken.findUnique({
             where: {
                 user_id: existing_user.id
@@ -142,9 +149,11 @@ export class AuthService {
                     user_id: existing_user.id
                 }
             })
-            
+
             console.log("[registerUser] Created refresh token:", refresh_token);
         } else {
+            console.log("[login] Found refresh token:", does_session_exist);
+            console.log("[registerUser] Refresh token exists, can return existing auth.");
             refresh_token = does_session_exist;
         }
 
