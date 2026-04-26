@@ -19,6 +19,7 @@
     "test:coverage": "vitest run --coverage",
     "test:unit": "vitest run --testPathPattern=unit",
     "test:integration": "vitest run --testPathPattern=integration",
+    "test:performance": "node src/test/run-performance.mjs",
     "dev": "tsx watch src/server.ts",
     "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc",
@@ -46,6 +47,7 @@
   "devDependencies": {
     "@testcontainers/postgresql": "^11.13.0",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/k6": "^1.7.0",
     "@types/node": "^25.5.0",
     "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.1",
