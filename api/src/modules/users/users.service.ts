@@ -27,7 +27,7 @@ type OrderSummary = {
 };
 
 export class UserService {
-    constructor(private readonly prisma: PrismaClient) {}
+    constructor(private readonly prisma: PrismaClient) { }
 
     private verifyToken(access_token: string): TokenPayload {
         if (!access_token) {
@@ -61,13 +61,16 @@ export class UserService {
         if (!user) {
             throw new ResourceNotFoundError("User not found.");
         }
+        if(!user.refresh_token[0]) {
+            throw new ResourceNotFoundError("Refresh token not found.");
+        }
         console.log('[getProfile] Found user:', user.id);
 
         return {
             email: user.email,
             username: user.username,
             created_at: user.created_at,
-            refresh_token_expires_at: user.refresh_token?.expires_at ?? null,
+            refresh_token_expires_at: user.refresh_token[0]?.expires_at ?? null,
         };
     }
 

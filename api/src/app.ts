@@ -17,10 +17,10 @@ export async function buildApp() {
     await app.register(swaggerPlugin);
 
     await app.register(authRoutes, { prefix: "/auth" })
+    await app.register(usersRoutes, { prefix: "/users" })
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
     await app.register(webhookRoutes, { prefix: "/webhooks" })
-    await app.register(usersRoutes, { prefix: "/users" })
 
     return app
 }

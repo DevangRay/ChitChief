@@ -89,7 +89,7 @@ const makeUser = (refreshTokenExpiresAt: Date | null = new Date(Date.now() + 60 
     username: USER_NAME,
     created_at: new Date('2024-01-01T00:00:00.000Z'),
     password_hash: 'hashed-password',
-    refresh_token: refreshTokenExpiresAt ? { expires_at: refreshTokenExpiresAt } : null,
+    refresh_token: [refreshTokenExpiresAt ? { expires_at: refreshTokenExpiresAt } : null],
 });
 
 const makeEvent = (overrides: object = {}) => ({
@@ -151,8 +151,8 @@ const buildProfileService = ({
             findUnique: dbError
                 ? vi.fn().mockRejectedValue(dbError)
                 : vi.fn().mockResolvedValue(
-                      userExists ? makeUser(refreshTokenExpiresAt) : null,
-                  ),
+                    userExists ? makeUser(refreshTokenExpiresAt) : null,
+                ),
         },
     };
 
@@ -315,11 +315,10 @@ describe('UserService.getProfile — behavior', () => {
                 expect(result.refresh_token_expires_at).toEqual(expiresAt);
             });
 
-            it('returns null for refresh_token_expires_at when the user has no active session', async () => {
+            it('throws error for refresh_token_expires_at when the user has no active session', async () => {
                 const token = makeValidToken();
                 const { service } = buildProfileService({ refreshTokenExpiresAt: null });
-                const result = await service.getProfile(token);
-                expect(result.refresh_token_expires_at).toBeNull();
+                await expect(service.getProfile(token)).rejects.toThrow();
             });
         });
     });

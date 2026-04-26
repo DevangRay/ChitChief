@@ -5,7 +5,7 @@ import EventsService from "./events.service.js";
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new EventsService(fastify.prisma);
 
-    fastify.get('/', { schema: getEventsSchema }, async (request, reply) => {
+    fastify.get('', { schema: getEventsSchema }, async (request, reply) => {
         try {
             const events = await service.getEvents();
 
