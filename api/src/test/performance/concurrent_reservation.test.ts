@@ -14,7 +14,7 @@ import http from "k6/http";
 import { Counter } from "k6/metrics";
 import encoding from "k6/encoding";
 
-const BASE_URL = __ENV.BACKEND_SERVER_URL || "http://localhost:3000";
+const BASE_URL = "http://localhost:3000";
 
 // 409 is an expected outcome in this test — tell k6 not to count it as http_req_failed
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 299 }, 409));

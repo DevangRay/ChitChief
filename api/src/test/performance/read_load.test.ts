@@ -16,7 +16,7 @@
 import { check, sleep } from "k6";
 import http from "k6/http";
 
-const BASE_URL = __ENV.BACKEND_SERVER_URL || "http://localhost:3000";
+const BASE_URL = "http://localhost:3000";
 
 // 404 (no seats matching filter after reservations) is expected — not a failure
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 299 }, 404));

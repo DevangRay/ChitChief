@@ -20,7 +20,7 @@ import { check, sleep, group } from "k6";
 import http from "k6/http";
 import encoding from "k6/encoding";
 
-const BASE_URL = __ENV.BACKEND_SERVER_URL || "http://localhost:3000";
+const BASE_URL = "http://localhost:3000";
 const SEATS_PER_USER = 2;
 
 // Under high VU counts every registration does a bcrypt hash (10 rounds). Node's libuv

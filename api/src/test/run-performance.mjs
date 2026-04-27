@@ -12,7 +12,7 @@ const TESTS = {
 };
 
 const test_name = process.argv[2];
-const base_url = `http://${process.env.BACKEND_SERVER_HOST}:${process.env.BACKEND_SERVER_PORT}` || "http://localhost:3000";
+const base_url = "http://localhost:3000";
 
 if (!test_name) {
     console.error("Usage: node run-performance.mjs <test_name>");
