@@ -15,6 +15,9 @@
 * Resend emails
     * https://resend.com/emails
     * https://mxtoolbox.com/SuperTool.aspx?action=dmarc%3adevangray.dev&run=toolpage
+* k6 performance testing
+    * requires installation locally: https://grafana.com/docs/k6/latest/set-up/install-k6/
+    * Note this should only be run locally
 ---
 DB Schema 
 * https://dbdocs.io/devangray624/ChitChief-DB-Schema
