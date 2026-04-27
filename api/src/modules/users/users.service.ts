@@ -1,12 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import jwt from 'jsonwebtoken';
-import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError.js";
+import { verifyToken } from "../../lib/verify-signed-token.js";
 
-type TokenPayload = {
-    user_id: string;
-    user_email: string;
-};
 
 type UserProfile = {
     email: string;
@@ -29,28 +24,9 @@ type OrderSummary = {
 export class UserService {
     constructor(private readonly prisma: PrismaClient) { }
 
-    private verifyToken(access_token: string): TokenPayload {
-        if (!access_token) {
-            throw new ForbiddenError("No access token provided.");
-        }
-        try {
-            const payload = jwt.verify(access_token, process.env.SIGNING_SECRET!) as TokenPayload;
-            if (!payload) {
-                throw new ForbiddenError("Invalid access token.");
-            }
-            return payload;
-        } catch (error) {
-            if (error instanceof ForbiddenError) throw error;
-            if (error instanceof Error && error.name === 'TokenExpiredError') {
-                throw new ForbiddenError("Access token has expired.");
-            }
-            throw new ForbiddenError("Invalid access token.");
-        }
-    }
-
     async getProfile(access_token: string): Promise<UserProfile> {
         console.log('[getProfile] Validating access token.');
-        const payload = this.verifyToken(access_token);
+        const payload = verifyToken(access_token);
         console.log('[getProfile] Token valid. Fetching user.');
 
         const user = await this.prisma.user.findUnique({
@@ -61,7 +37,7 @@ export class UserService {
         if (!user) {
             throw new ResourceNotFoundError("User not found.");
         }
-        if(!user.refresh_token[0]) {
+        if (!user.refresh_token[0]) {
             throw new ResourceNotFoundError("Refresh token not found.");
         }
         console.log('[getProfile] Found user:', user.id);
@@ -76,7 +52,7 @@ export class UserService {
 
     async getOrders(access_token: string): Promise<OrderSummary[]> {
         console.log('[getOrders] Validating access token.');
-        const payload = this.verifyToken(access_token);
+        const payload = verifyToken(access_token);
         console.log('[getOrders] Token valid. Fetching orders for user:', payload.user_id);
 
         const orders = await this.prisma.order.findMany({
