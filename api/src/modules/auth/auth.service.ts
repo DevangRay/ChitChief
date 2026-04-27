@@ -8,6 +8,7 @@ import { Queue } from "bullmq";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
 
 const ACCESS_TOKEN_TTL_IN_MINUTES = 15;
+const REFRESH_TOKEN_TTL_IN_HOURS = 24;
 
 export class AuthService {
     private readonly reservation_queue: Queue;
@@ -97,7 +98,8 @@ export class AuthService {
             { refresh_token_id: refresh_token.id },
             {
                 // have to check TTL from schema (done through Postgres)
-                delay: 60 * 1000
+                // 24 hours in milliseconds
+                delay: REFRESH_TOKEN_TTL_IN_HOURS * 60 * 60 * 1000
             }
         )
         console.log("[registerUser] Queued remove_refresh_token job.");
@@ -246,7 +248,7 @@ export class AuthService {
             }
         })
         if (!refresh_token_exists) {
-        console.log("[refresh] Refresh token does not exist.");
+            console.log("[refresh] Refresh token does not exist.");
             throw new ResourceNotFoundError("Invalid refresh token.");
         }
         console.log("[refresh] Retrieved token:", refresh_token_exists);
@@ -287,16 +289,17 @@ export class AuthService {
             }
         );
 
-        console.log("[registerUser] Queueing job to delete token after TTL");
+        console.log("[refresh] Queueing job to delete token after TTL");
         this.reservation_queue.add(
             'remove_refresh_token',
             { refresh_token_id: rotated_refresh_token.id },
             {
                 // have to check TTL from schema (done through Postgres)
-                delay: 60 * 1000
+                // 24 hours in milliseconds
+                delay: REFRESH_TOKEN_TTL_IN_HOURS * 60 * 60 * 1000
             }
         )
-        console.log("[registerUser] Queued remove_refresh_token job.");
+        console.log("[refresh] Queued remove_refresh_token job.");
 
         return {
             access_token: signed_token,
