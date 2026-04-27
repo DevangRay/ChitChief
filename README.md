@@ -76,8 +76,9 @@ Potential flow
 3. GET  /events               → browse available events
 4. GET  /events/{id}/seats    → see seat availability
 5. POST /tickets/reserve      → hold seats #A14, #A15 (60s lock starts)
-6. POST /tickets/purchase/intent       → create PaymentIntent, get client_secret
-7. POST /tickets/purchase/confirm      → card: 4242 4242 4242 4242 → 200 OK
+6. GET /tickets/demo/idempotency_key      → for test purposes, create Idempotency Key (would be created by front-end)
+6. POST /tickets/purchase/intent       → create PaymentIntent, confirm with pre-set payment method
+7. [CALLED BY STRIPE ]POST /webhooks/payment/confirm      → card: 4242 4242 4242 4242 → 200 OK
 8. GET  /users/me/orders               → see completed order in history
 9. POST /tickets/reserve      → try to grab same seat in #A13, #A14 (overlap)→ 409 Conflict
 10. POST /auth/logout
