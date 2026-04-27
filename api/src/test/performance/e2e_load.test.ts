@@ -45,7 +45,10 @@ export const options = {
         { duration: "15s", target: 0 },
     ],
     thresholds: {
-        // "http_req_duration": ["p(95)<23000"],
+        // No http_req_duration threshold here: this test validates correctness (no 500s,
+        // no double-booking, all checks pass), not latency. At 500 VUs, bcrypt (10 rounds)
+        // saturates Node's libuv thread pool (4 threads), causing expected queuing that
+        // pushes p(95) to ~20s on local hardware. See read_load.test.ts for latency benchmarks.
         "http_req_failed": ["rate<0.05"],
         "checks": ["rate>0.85"],
     },
