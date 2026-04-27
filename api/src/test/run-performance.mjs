@@ -7,8 +7,6 @@ const TESTS = {
     concurrent_reservation: "src/test/performance/concurrent_reservation.test.ts",
     e2e_load: "src/test/performance/e2e_load.test.ts",
     read_load: "src/test/performance/read_load.test.ts",
-    // Legacy smoke test
-    smoke: "src/test/performance.test.ts",
 };
 
 const test_name = process.argv[2];
