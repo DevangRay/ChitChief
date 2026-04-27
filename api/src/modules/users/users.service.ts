@@ -1,7 +1,5 @@
 import { PrismaClient } from "@prisma/client";
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError.js";
-import { verifyToken } from "../../lib/verify-signed-token.js";
-
 
 type UserProfile = {
     email: string;
@@ -24,13 +22,16 @@ type OrderSummary = {
 export class UserService {
     constructor(private readonly prisma: PrismaClient) { }
 
-    async getProfile(access_token: string): Promise<UserProfile> {
-        console.log('[getProfile] Validating access token.');
-        const payload = verifyToken(access_token);
-        console.log('[getProfile] Token valid. Fetching user.');
-
+    async getProfile(user_id: string): Promise<UserProfile> {
+        console.log('[getProfile] Verifying parameters');
+        if (!user_id) {
+            throw new ResourceNotFoundError("Invalid user_id provided.")
+        }
+        console.log('[getProfile] Parameters verified');
+        
+        console.log('[getProfile] Retrieving user');
         const user = await this.prisma.user.findUnique({
-            where: { id: payload.user_id },
+            where: { id: user_id },
             include: { refresh_token: true }
         });
 
@@ -50,13 +51,16 @@ export class UserService {
         };
     }
 
-    async getOrders(access_token: string): Promise<OrderSummary[]> {
-        console.log('[getOrders] Validating access token.');
-        const payload = verifyToken(access_token);
-        console.log('[getOrders] Token valid. Fetching orders for user:', payload.user_id);
+    async getOrders(user_id: string): Promise<OrderSummary[]> {
+        console.log('[getProfile] Verifying parameters');
+        if (!user_id) {
+            throw new ResourceNotFoundError("Invalid user_id provided.")
+        }
+        console.log('[getProfile] Parameters verified');
 
+        console.log('[getProfile] Retrieving order');
         const orders = await this.prisma.order.findMany({
-            where: { user_id: payload.user_id },
+            where: { user_id: user_id },
             include: {
                 order_seats: {
                     include: {
