@@ -1,4 +1,4 @@
-import { GenericContainer, StartedTestContainer } from "testcontainers";
+import { GenericContainer, type StartedTestContainer } from "testcontainers";
 import { Redis } from 'ioredis';
 
 let container: StartedTestContainer;
