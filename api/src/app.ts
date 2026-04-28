@@ -8,6 +8,7 @@ import eventsRoutes from "./modules/events/events.routes.js";
 import ticketsRoutes from "./modules/tickets/tickets.routes.js";
 import webhookRoutes from "./modules/webhooks/webhooks.routes.js";
 import usersRoutes from "./modules/users/users.routes.js";
+import testCleanupRoutes from "./modules/test/test-cleanup.routes.js";
 
 export async function buildApp() {
     const app = Fastify({ logger: true });
@@ -21,6 +22,10 @@ export async function buildApp() {
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
     await app.register(webhookRoutes, { prefix: "/webhooks" })
+
+    if (process.env.NODE_ENV !== 'production') {
+        await app.register(testCleanupRoutes, { prefix: "/test" });
+    }
 
     return app
 }

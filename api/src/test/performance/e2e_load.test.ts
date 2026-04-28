@@ -40,15 +40,16 @@ export const options = {
         { duration: "30s", target: 200 },
         { duration: "30s", target: 400 },
         { duration: "30s", target: 500 },
-        { duration: "60s", target: 500 },
+        { duration: "120s", target: 500 },
         { duration: "60s", target: 250 },
+        { duration: "60s", target: 100 },
         { duration: "15s", target: 0 },
     ],
     thresholds: {
         // No http_req_duration threshold here: this test validates correctness (no 500s,
         // no double-booking, all checks pass), not latency. At 500 VUs, bcrypt (10 rounds)
         // saturates Node's libuv thread pool (4 threads), causing expected queuing that
-        // pushes p(95) to ~20s on local hardware. See read_load.test.ts for latency benchmarks.
+        // pushes p(95) to ~20s on Local Hardware. See read_load.test.ts for latency benchmarks.
         "http_req_failed": ["rate<0.05"],
         "checks": ["rate>0.85"],
     },
@@ -86,6 +87,19 @@ export function setup() {
         all_seats,
         total_seats: all_seats.length,
     };
+}
+
+export function teardown(data: {
+    event_id: string;
+    all_seats: { id: string }[];
+    total_seats: number;
+}) {
+    const seat_ids = data.all_seats.map((s) => s.id);
+    http.post(
+        `${BASE_URL}/test/cleanup`,
+        JSON.stringify({ username_prefix: "perf_e2e_", seat_ids }),
+        { headers: { "Content-Type": "application/json" } }
+    );
 }
 
 export default function (data: {

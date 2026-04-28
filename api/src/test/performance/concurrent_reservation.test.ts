@@ -26,8 +26,8 @@ export const options = {
     scenarios: {
         concurrent_burst: {
             executor: "shared-iterations",
-            vus: 50,
-            iterations: 50,
+            vus: 200,
+            iterations: 400,
             maxDuration: "60s",
         },
     },
@@ -35,7 +35,7 @@ export const options = {
         "successful_reservations": ["count>=1", "count<2"],
         "http_req_failed": ["rate<0.01"],
         "checks": ["rate>0.95"],
-        "http_req_duration": ["p(95)<3000"],
+        "http_req_duration": ["p(95)<3500"],
     },
 };
 
@@ -89,14 +89,22 @@ export function setup() {
     const { access_token } = JSON.parse(register_res.body as string);
     const { user_id } = decodeJwt(access_token);
 
-    return { seat_ids: contested_seat_ids, user_uuid: user_id };
+    return { seat_ids: contested_seat_ids, user_uuid: user_id, access_token: access_token };
 }
 
-export default function (data: { seat_ids: string[]; user_uuid: string }) {
+export function teardown(data: { seat_ids: string[]; user_uuid: string; access_token: string }) {
+    http.post(
+        `${BASE_URL}/test/cleanup`,
+        JSON.stringify({ user_ids: [data.user_uuid], seat_ids: data.seat_ids }),
+        { headers: { "Content-Type": "application/json" } }
+    );
+}
+
+export default function (data: { seat_ids: string[]; user_uuid: string, access_token: string }) {
     const res = http.post(
         `${BASE_URL}/tickets/reserve`,
         JSON.stringify({ seat_ids: data.seat_ids, user_uuid: data.user_uuid }),
-        { headers: { "Content-Type": "application/json" } }
+        { headers: { "Content-Type": "application/json", "Authorization": `Bearer ${data.access_token}` } }
     );
 
     check(res, {
