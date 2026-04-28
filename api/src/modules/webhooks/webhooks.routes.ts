@@ -29,12 +29,12 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
         switch (event.type) {
             case "payment_intent.succeeded":
                 // update order
-                console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.succeeded — id: ${event.data?.object?.id}, amount: ${event.data?.object?.amount / 100} ${event.data?.object?.currency?.toUpperCase()}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}, seats: ${event.data?.object?.description}`);
-                await service.handleSuccess(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.idempotency_key, event.data?.object?.id);
+                console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.succeeded — id: ${event.data?.object?.id}, amount: ${event.data?.object?.amount / 100} ${event.data?.object?.currency?.toUpperCase()}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, user_email: ${event.data?.object?.metadata?.user_email}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}, seats: ${event.data?.object?.description}`);
+                await service.handleSuccess(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.user_email, event.data?.object?.metadata?.idempotency_key, event.data?.object?.id);
                 break;
             case "payment_intent.payment_failed":
-                console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.payment_failed — id: ${event.data?.object?.id}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}`);
-                await service.handleFailure(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.idempotency_key);
+                console.log(`[webhooks.routes /payment/confirm]: Handling payment_intent.payment_failed — id: ${event.data?.object?.id}, user_uuid: ${event.data?.object?.metadata?.user_uuid}, user_email: ${event.data?.object?.metadata?.user_email}, idempotency_key: ${event.data?.object?.metadata?.idempotency_key}`);
+                await service.handleFailure(event.data?.object?.metadata?.user_uuid, event.data?.object?.metadata?.user_email, event.data?.object?.metadata?.idempotency_key);
                 break;
             case "payment_intent.requires_action":
                 // out of scope at the moment

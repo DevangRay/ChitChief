@@ -195,7 +195,7 @@ export class TicketService {
         }
     }
 
-    async createPaymentIntent(reservation_token: string, user_uuid: string, idempotency_key: string, payment_method: PaymentMethodKey) {
+    async createPaymentIntent(reservation_token: string, user_uuid: string, user_email: string, idempotency_key: string, payment_method: PaymentMethodKey) {
         // validate input
         console.log('[createPaymentIntent] Validating input.')
         if (!reservation_token) {
@@ -308,7 +308,8 @@ export class TicketService {
                 metadata: {
                     // could just send reservation_token. Expiration is a problem howerver.
                     idempotency_key: idempotency_key,
-                    user_uuid: user_uuid
+                    user_uuid: user_uuid,
+                    user_email: user_email
                 },
                 statement_descriptor: 'ChitChief Seat Order',
                 statement_descriptor_suffix: 'ChitChief',

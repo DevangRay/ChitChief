@@ -7,6 +7,7 @@ import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
 import ConflictError from "../../lib/custom_errors/ConflictError.js";
 import Stripe from "stripe";
+import { verifyToken } from "../../lib/verify-signed-token.js";
 
 type ReserveTicketRequestBody = {
     seat_ids: string[],
@@ -26,6 +27,15 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
     fastify.post('/reserve', { schema: reserveTicketSchema }, async (request, reply) => {
         try {
+            const authorization = request.headers.authorization ?? '';
+            const access_token = authorization.startsWith('Bearer ')
+                ? authorization.slice(7)
+                : authorization;
+
+            console.log('[tickets.routes POST /reserve] Validating access token.');
+            const payload = verifyToken(access_token);
+            console.log('[tickets.routes POST /reserve] Token valid. Reserving ticket.');
+
             const request_body = request.body as ReserveTicketRequestBody;
             const seat_ids = request_body.seat_ids;
             const user_uuid = request_body.user_uuid;
@@ -70,9 +80,14 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             return reply.status(500).send({ message: 'Internal server error.' });
         } catch (error) {
             const printable_error = (error as Error).message;
-            console.log("[tickets.routes /reserve]: Unplanned error: ", printable_error);
-            fastify.log.error(error, '[POST /reserve] Failed to reserve seats');
-            return reply.status(500).send({ message: 'Internal server error.' });
+            console.log('[tickets.routes POST /tickets/reserve]: Caught error:', printable_error);
+            fastify.log.error(error, '[POST /tickets/reserve] Failed to reserve seats');
+
+            if (error instanceof ForbiddenError) {
+                return reply.status(403).send({ message: error.message });
+            } else {
+                return reply.status(500).send({ message: 'Internal server error.' });
+            }
         }
     });
 
@@ -87,13 +102,22 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
     fastify.post('/payment/intent', { schema: createPaymentIntentSchema }, async (request, reply) => {
         try {
+            const authorization = request.headers.authorization ?? '';
+            const access_token = authorization.startsWith('Bearer ')
+                ? authorization.slice(7)
+                : authorization;
+
+            console.log('[tickets.routes POST /payment/intent] Validating access token.');
+            const payload = verifyToken(access_token);
+            console.log('[tickets.routes POST /payment/intent] Token valid. Creating/confirming payment.');
+
             const request_body = request.body as PaymentIntentRequestBody;
             const reservation_token = request_body.reservation_token;
             const user_uuid = request_body.user_uuid;
             const idempotency_key = request_body.idempotency_key;
             const payment_method = request_body.payment_method;
 
-            const response = await service.createPaymentIntent(reservation_token, user_uuid, idempotency_key, payment_method);
+            const response = await service.createPaymentIntent(reservation_token, user_uuid, payload.user_email, idempotency_key, payment_method);
 
             return reply.status(200).send(response);
         } catch (error) {
@@ -121,32 +145,4 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             }
         }
     });
-
-    // fastify.post('/payment/confirm', async (request, reply) => {
-    //     console.log("headers:", request.headers)
-    //     const body_event = request.body;
-    //     console.log("body_event:", body_event);
-
-    //     const endpoint_secret = ""
-    //     const signature = request.headers['stripe-signature'];
-    //     console.log("endpoint_secret:", endpoint_secret)
-    //     console.log("signature:", signature)
-
-    //     try {
-    //         const stripe = Stripe(process.env.STRIPE_SECRET_KEY!);
-    //         const event = stripe.webhooks.constructEvent(
-    //             body_event,
-    //             signature,
-    //             endpoint_secret
-    //         );
-
-    //         console.log("constructed event:", event);
-    //     } catch(error) {
-    //         console.log("caught error:", error)
-    //         return reply.status(400).send({message: error})
-    //     }
-
-    //     return reply.status(200).send({recieved: true})
-    //     console.log("need to update db");
-    // });
 }

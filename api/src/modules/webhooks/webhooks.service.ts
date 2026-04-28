@@ -2,7 +2,7 @@ import { OrderStatus, PrismaClient, SeatStatus } from "@prisma/client"
 import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError.js"
 import { formatSeats } from "../../lib/send-email.js";
 import { Queue } from "bullmq"
-import {type Redis} from "ioredis";
+import { type Redis } from "ioredis";
 import Stripe from 'stripe';
 
 export class WebhooksService {
@@ -13,11 +13,14 @@ export class WebhooksService {
         });
     }
 
-    async handleSuccess(user_uuid: string | undefined, idempotency_key: string | undefined, payment_intent: string | undefined): Promise<void> {
+    async handleSuccess(user_uuid: string | undefined, user_email: string | undefined, idempotency_key: string | undefined, payment_intent: string | undefined): Promise<void> {
         // validate parameters
         console.log('[handleSuccess] Validating input.')
         if (!user_uuid) {
             throw new ResourceNotFoundError("Invalid user UUID provided.")
+        }
+        if (!user_email) {
+            throw new ResourceNotFoundError("Invalid user email provided.")
         }
         if (!idempotency_key) {
             throw new ResourceNotFoundError("Invalid idempotency key provided.")
@@ -113,6 +116,17 @@ export class WebhooksService {
         console.log('[handleSuccess] Updated Seats to:', sold_seats)
         const ordered_seats = sold_seats.map((seat) => formatSeats(seat.row, seat.number))
 
+        // // TEST SECTION
+        // console.log("[handleSuccess] TEST: adding reset successful order job")
+        // await this.reservation_queue.add(
+        //     'reset_successful_orders',
+        //     { order_id: completed_order.id },
+        //     {
+        //         delay: 15 * 1000, //delay in milliseconds
+        //     }
+        // );
+        // console.log("[handleSuccess] TEST: Job enqueued.")
+
         console.log("[handleSuccess] Adding job to send status email")
         const associated_event = await this.prisma.event.findUnique({
             where: {
@@ -125,7 +139,7 @@ export class WebhooksService {
         await this.reservation_queue.add(
             'send_success_message',
             {
-                email_target: 'devangray624@gmail.com',
+                email_target: user_email,
                 order_id: completed_order.id,
                 event_name: `"${associated_event?.name}: ${associated_event?.description}"`,
                 seats: ordered_seats
@@ -137,11 +151,14 @@ export class WebhooksService {
         console.log("[handleSuccess] Job enqueued.")
     }
 
-    async handleFailure(user_uuid: string | undefined, idempotency_key: string | undefined): Promise<void> {
+    async handleFailure(user_uuid: string | undefined, user_email: string | undefined, idempotency_key: string | undefined): Promise<void> {
         // validate parameters
         console.log('[handleFailure] Validating input.')
         if (!user_uuid) {
             throw new ResourceNotFoundError("Invalid user UUID provided.")
+        }
+        if (!user_email) {
+            throw new ResourceNotFoundError("Invalid user email provided.")
         }
         if (!idempotency_key) {
             throw new ResourceNotFoundError("Invalid idempotency key provided.")
@@ -189,7 +206,7 @@ export class WebhooksService {
         await this.reservation_queue.add(
             'send_failure_message',
             {
-                email_target: 'devangray624@gmail.com',
+                email_target: user_email,
                 order_id: expired_order.id,
                 event_name: `"${order_seats_join_object[0]?.seat.event.name}: ${order_seats_join_object[0]?.seat.event.description}"`,
                 seats: ordered_seats
