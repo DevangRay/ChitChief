@@ -43,5 +43,8 @@ export async function buildApp() {
         await app.register(testCleanupRoutes, { prefix: "/test" });
     }
 
+    // simple help check
+    app.get('/health', async () => ({ status: 'ok' }));
+
     return app
 }
