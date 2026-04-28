@@ -6,6 +6,10 @@
   "type": "module",
   "scripts": {
     "test": "vitest run --exclude '**/performance/*.test.ts'",
+    "test:watch": "vitest --exclude '**/performance/*.test.ts'",
+    "test:coverage": "vitest run --coverage --exclude '**/performance/*.test.ts'",
+    "test:unit": "vitest run --exclude '**/performance/*.test.ts' --exclude '**/*.e2e.test.ts'",
+    "test:e2e": "vitest run --exclude '**/performance/*.test.ts' --exclude '**/*.unit.test.ts'",
 
     "test:users:unit": "vitest run ./src/modules/users/users.service.unit.test.ts",
     "test:users:e2e": "vitest run ./src/modules/users/users.routes.e2e.test.ts",
@@ -20,11 +24,6 @@
     "test:tickets:e2e": "vitest run ./src/modules/tickets/tickets.routes.e2e.test.ts",
 
     "test:webhooks:unit": "vitest run ./src/modules/webhooks/webhooks.service.unit.test.ts",
-
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:unit": "vitest run --testPathPattern=unit",
-    "test:integration": "vitest run --testPathPattern=integration",
 
     "test:performance:concurrent": "node src/test/run-performance.mjs concurrent_reservation",
     "test:performance:e2e": "node src/test/run-performance.mjs e2e_load",

@@ -116,17 +116,6 @@ export class WebhooksService {
         console.log('[handleSuccess] Updated Seats to:', sold_seats)
         const ordered_seats = sold_seats.map((seat) => formatSeats(seat.row, seat.number))
 
-        // // TEST SECTION
-        // console.log("[handleSuccess] TEST: adding reset successful order job")
-        // await this.reservation_queue.add(
-        //     'reset_successful_orders',
-        //     { order_id: completed_order.id },
-        //     {
-        //         delay: 15 * 1000, //delay in milliseconds
-        //     }
-        // );
-        // console.log("[handleSuccess] TEST: Job enqueued.")
-
         console.log("[handleSuccess] Adding job to send status email")
         const associated_event = await this.prisma.event.findUnique({
             where: {
