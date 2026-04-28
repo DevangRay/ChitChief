@@ -10,25 +10,18 @@
     "test:coverage": "vitest run --coverage --exclude '**/performance/*.test.ts'",
     "test:unit": "vitest run --exclude '**/performance/*.test.ts' --exclude '**/*.e2e.test.ts'",
     "test:e2e": "vitest run --exclude '**/performance/*.test.ts' --exclude '**/*.unit.test.ts'",
-
     "test:users:unit": "vitest run ./src/modules/users/users.service.unit.test.ts",
     "test:users:e2e": "vitest run ./src/modules/users/users.routes.e2e.test.ts",
-
     "test:auth:unit": "vitest run ./src/modules/auth/auth.service.unit.test.ts",
     "test:auth:e2e": "vitest run ./src/modules/auth/auth.routes.e2e.test.ts",
-
     "test:events:unit": "vitest run ./src/modules/events/events.service.unit.test.ts",
     "test:events:e2e": "vitest run ./src/modules/events/events.routes.e2e.test.ts",
-
     "test:tickets:unit": "vitest run ./src/modules/tickets/tickets.service.unit.test.ts",
     "test:tickets:e2e": "vitest run ./src/modules/tickets/tickets.routes.e2e.test.ts",
-
     "test:webhooks:unit": "vitest run ./src/modules/webhooks/webhooks.service.unit.test.ts",
-
     "test:performance:concurrent": "node src/test/run-performance.mjs concurrent_reservation",
     "test:performance:e2e": "node src/test/run-performance.mjs e2e_load",
     "test:performance:read": "node src/test/run-performance.mjs read_load",
-
     "dev": "tsx watch src/server.ts",
     "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc",
@@ -38,6 +31,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "@prisma/adapter-pg": "^7.5.0",
@@ -50,8 +46,7 @@
     "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
     "resend": "^6.12.2",
-    "stripe": "^22.0.0",
-    "supertest": "^7.2.2"
+    "stripe": "^22.0.0"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^11.13.0",
@@ -61,6 +56,7 @@
     "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.1",
     "prisma": "^7.6.0",
+    "supertest": "^7.2.2",
     "testcontainers": "^11.13.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",

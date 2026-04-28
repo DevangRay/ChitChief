@@ -1,5 +1,9 @@
 // app.ts
 import Fastify from 'fastify';
+import fastifyCors from '@fastify/cors';
+import fastifyRateLimit from '@fastify/rate-limit';
+import fastifyHelmet from '@fastify/helmet';
+
 import swaggerPlugin from './plugins/swagger.js';
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js'
@@ -12,6 +16,18 @@ import testCleanupRoutes from "./modules/test/test-cleanup.routes.js";
 
 export async function buildApp() {
     const app = Fastify({ logger: true });
+
+    await app.register(fastifyCors, {
+        origin: [`https://${process.env.BACKEND_SERVER_HOST}:${process.env.BACKEND_SERVER_PORT}`],
+        methods: ['GET', 'POST'],
+        credentials: true
+    })
+    await app.register(fastifyRateLimit, {
+        max: 100,
+        timeWindow: '1 minute',
+        ban: 10
+    })
+    await app.register(fastifyHelmet);
 
     await app.register(prismaPlugin);
     await app.register(redisPlugin);
