@@ -67,6 +67,7 @@ vi.mock('bullmq', () => ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const USER_ID = 'user-uuid-1';
+const USER_EMAIL = 'test@example.com';
 const IDEMPOTENCY_KEY = 'idem-key-uuid-1';
 const ORDER_ID = 'order-uuid-1';
 const PAYMENT_INTENT = 'pi_test_123';
@@ -205,7 +206,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             it('completes without throwing for valid user_uuid, idempotency_key, and payment_intent', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT)).resolves.toBeUndefined();
+                await expect(service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT)).resolves.toBeUndefined();
             });
         });
 
@@ -213,14 +214,30 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             it('throws ResourceNotFoundError when user_uuid is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(undefined, IDEMPOTENCY_KEY, PAYMENT_INTENT))
+                await expect(service.handleSuccess(undefined, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when user_uuid is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess('', IDEMPOTENCY_KEY, PAYMENT_INTENT))
+                await expect(service.handleSuccess('', USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+        });
+
+        describe('exception cases — missing user_email', () => {
+            it('throws ResourceNotFoundError when user_email is undefined', async () => {
+                const { service } = buildService();
+
+                await expect(service.handleSuccess(USER_ID, undefined, IDEMPOTENCY_KEY, PAYMENT_INTENT))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+
+            it('throws ResourceNotFoundError when user_email is an empty string', async () => {
+                const { service } = buildService();
+
+                await expect(service.handleSuccess(USER_ID, '', IDEMPOTENCY_KEY, PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -229,14 +246,14 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             it('throws ResourceNotFoundError when idempotency_key is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, undefined, PAYMENT_INTENT))
+                await expect(service.handleSuccess(USER_ID, USER_EMAIL, undefined, PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when idempotency_key is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, '', PAYMENT_INTENT))
+                await expect(service.handleSuccess(USER_ID, USER_EMAIL, '', PAYMENT_INTENT))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -245,14 +262,14 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             it('throws ResourceNotFoundError when payment_intent is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, undefined))
+                await expect(service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, undefined))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when payment_intent is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, ''))
+                await expect(service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, ''))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -267,7 +284,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
         it('updates the Order to CONFIRMED status', async () => {
             const { service, prismaMock } = buildService();
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.order.update.mock.calls[0][0];
             expect(updateCall.data.order_status).toBe(OrderStatus.CONFIRMED);
@@ -276,7 +293,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
         it('updates the Order filtered by user_id, idempotency_key, and PENDING status', async () => {
             const { service, prismaMock } = buildService();
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.order.update.mock.calls[0][0];
             expect(updateCall.where).toMatchObject({
@@ -290,7 +307,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const seatIds = makeSeatIds(3);
             const { service, prismaMock } = buildService({ seatIds });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.seat.updateManyAndReturn.mock.calls[0][0];
             expect(updateCall.data.seat_status).toBe(SeatStatus.SOLD);
@@ -301,7 +318,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const seatIds = makeSeatIds(3);
             const { service, prismaMock } = buildService({ seatIds });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const updateCall = prismaMock.seat.updateManyAndReturn.mock.calls[0][0];
             expect(updateCall.where).toMatchObject({ seat_status: SeatStatus.RESERVED });
@@ -319,7 +336,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
                 findUniqueResult: makeOrder({ order_status: OrderStatus.CONFIRMED }),
             });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             expect(prismaMock.order.update).not.toHaveBeenCalled();
         });
@@ -329,7 +346,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
                 findUniqueResult: makeOrder({ order_status: OrderStatus.FAILED }),
             });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             expect(prismaMock.order.update).not.toHaveBeenCalled();
         });
@@ -344,7 +361,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
         it('completes without throwing when the order has no connected seats', async () => {
             const { service } = buildService({ seatIds: [] });
 
-            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT)).resolves.toBeUndefined();
+            await expect(service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT)).resolves.toBeUndefined();
         });
     });
 
@@ -363,7 +380,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const seatIds = makeSeatIds(2);
             const { service } = buildService({ seatIds, seatUpdateCount: 1 });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             expect(mockRefundsCreate).toHaveBeenCalledWith({ payment_intent: PAYMENT_INTENT });
         });
@@ -372,7 +389,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const seatIds = makeSeatIds(2);
             const { service, prismaMock } = buildService({ seatIds, seatUpdateCount: 1 });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const revertCall = prismaMock.order.update.mock.calls[1][0];
             expect(revertCall.data.order_status).toBe(OrderStatus.FAILED);
@@ -382,7 +399,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const seatIds = makeSeatIds(2);
             const { service, prismaMock } = buildService({ seatIds, seatUpdateCount: 1 });
 
-            await service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
 
             const revertCall = prismaMock.seat.updateMany.mock.calls[0][0];
             expect(revertCall.data.seat_status).toBe(SeatStatus.AVAILABLE);
@@ -393,7 +410,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const { service } = buildService({ seatIds, seatUpdateCount: 1 });
 
             await expect(
-                service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT)
+                service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT)
             ).resolves.toBeUndefined();
         });
     });
@@ -408,7 +425,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const dbError = new Error('Order not found');
             const { service } = buildService({ orderUpdateError: dbError });
 
-            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT))
+            await expect(service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT))
                 .rejects.toThrow('Order not found');
         });
 
@@ -416,7 +433,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
             const dbError = new Error('Seat update failed');
             const { service } = buildService({ seatUpdateError: dbError });
 
-            await expect(service.handleSuccess(USER_ID, IDEMPOTENCY_KEY, PAYMENT_INTENT))
+            await expect(service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT))
                 .rejects.toThrow('Seat update failed');
         });
     });
@@ -442,7 +459,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
             it('completes without throwing for valid user_uuid and idempotency_key', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleFailure(USER_ID, IDEMPOTENCY_KEY)).resolves.toBeUndefined();
+                await expect(service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY)).resolves.toBeUndefined();
             });
         });
 
@@ -450,14 +467,30 @@ describe('WebhooksService.handleFailure — behavior', () => {
             it('throws ResourceNotFoundError when user_uuid is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleFailure(undefined, IDEMPOTENCY_KEY))
+                await expect(service.handleFailure(undefined, USER_EMAIL, IDEMPOTENCY_KEY))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when user_uuid is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleFailure('', IDEMPOTENCY_KEY))
+                await expect(service.handleFailure('', USER_EMAIL, IDEMPOTENCY_KEY))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+        });
+
+        describe('exception cases — missing user_email', () => {
+            it('throws ResourceNotFoundError when user_email is undefined', async () => {
+                const { service } = buildService();
+
+                await expect(service.handleFailure(USER_ID, undefined, IDEMPOTENCY_KEY))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+
+            it('throws ResourceNotFoundError when user_email is an empty string', async () => {
+                const { service } = buildService();
+
+                await expect(service.handleFailure(USER_ID, '', IDEMPOTENCY_KEY))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -466,14 +499,14 @@ describe('WebhooksService.handleFailure — behavior', () => {
             it('throws ResourceNotFoundError when idempotency_key is undefined', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleFailure(USER_ID, undefined))
+                await expect(service.handleFailure(USER_ID, USER_EMAIL, undefined))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when idempotency_key is an empty string', async () => {
                 const { service } = buildService();
 
-                await expect(service.handleFailure(USER_ID, ''))
+                await expect(service.handleFailure(USER_ID, USER_EMAIL, ''))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -490,7 +523,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
                 findUniqueResult: makeOrder({ order_status: OrderStatus.FAILED }),
             });
 
-            await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
 
             expect(prismaMock.order.update).not.toHaveBeenCalled();
         });
@@ -505,7 +538,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
         it('updates the Order to FAILED status', async () => {
             const { service, prismaMock } = buildService();
 
-            await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
 
             const updateCall = prismaMock.order.update.mock.calls[0][0];
             expect(updateCall.data.order_status).toBe(OrderStatus.FAILED);
@@ -515,7 +548,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
             // filter does not filter by status, regardless of status the correct action is to expire the order upon a failed webhook call
             const { service, prismaMock } = buildService();
 
-            await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
 
             const updateCall = prismaMock.order.update.mock.calls[0][0];
             expect(updateCall.where).toMatchObject({
@@ -528,7 +561,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
             const seatIds = makeSeatIds(2);
             const { service, prismaMock } = buildService({ seatIds });
 
-            await service.handleFailure(USER_ID, IDEMPOTENCY_KEY);
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
 
             expect(prismaMock.orderSeats.deleteMany).toHaveBeenCalledTimes(0);
         });
@@ -543,7 +576,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
         it('completes without throwing when the order has no connected seats', async () => {
             const { service } = buildService({ seatIds: [] });
 
-            await expect(service.handleFailure(USER_ID, IDEMPOTENCY_KEY)).resolves.toBeUndefined();
+            await expect(service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY)).resolves.toBeUndefined();
         });
     });
 
@@ -557,7 +590,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
             const dbError = new Error('Order not found');
             const { service } = buildService({ orderUpdateError: dbError });
 
-            await expect(service.handleFailure(USER_ID, IDEMPOTENCY_KEY))
+            await expect(service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY))
                 .rejects.toThrow('Order not found');
         });
     });

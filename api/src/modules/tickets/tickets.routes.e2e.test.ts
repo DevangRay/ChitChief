@@ -10,7 +10,15 @@ import { seatLockFromId } from '../../lib/redis-keys'
 import { OrderStatus } from '@prisma/client'
 
 const TEST_USER_UUID = '00000000-0000-0000-0000-000000000001'
+const TEST_USER_EMAIL = 'test@example.com'
 const TEST_IDEMPOTENCY_KEY = '11111111-1111-1111-1111-111111111111'
+
+const makeAccessToken = () =>
+    jwt.sign(
+        { user_id: TEST_USER_UUID, user_email: TEST_USER_EMAIL },
+        process.env.SIGNING_SECRET!,
+        { expiresIn: 900 },
+    )
 
 describe('Tickets Routes E2E', () => {
     let app: FastifyInstance
@@ -75,6 +83,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(200)
@@ -88,6 +97,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(200)
@@ -101,6 +111,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(200)
@@ -113,6 +124,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(200)
@@ -131,6 +143,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat2.id, seat3.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(200)
@@ -143,11 +156,13 @@ describe('Tickets Routes E2E', () => {
             // First reservation succeeds
             await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             // Second reservation for the same seat conflicts
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(409)
@@ -164,11 +179,13 @@ describe('Tickets Routes E2E', () => {
             // Reserve only seat1
             await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat1.id], user_uuid: TEST_USER_UUID })
 
             // Try to reserve both — seat1 is now conflicting, seat2 is still free
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat1.id, seat2.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(409)
@@ -176,6 +193,7 @@ describe('Tickets Routes E2E', () => {
             expect(res.body.conflict_seat_ids).not.toContain(seat2.id)
         })
 
+        // ── Schema validation (400) — Fastify rejects before the handler runs ────
         it('Exception Test: returns 400 when seat_ids is missing from body', async () => {
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
@@ -204,11 +222,40 @@ describe('Tickets Routes E2E', () => {
             expect(res.status).toBe(400)
         })
 
-        it('Exception Test: returns 404 when a seat_id does not exist in the database', async () => {
+        // ── Access token validation (403) ────────────────────────────────────────
+        it('Exception Test: returns 403 when Authorization header is missing', async () => {
+            const { seat } = await createSeatFixture(prisma)
+
+            const res = await supertest(app.server)
+                .post('/tickets/reserve')
+                .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
+
+            expect(res.status).toBe(403)
+        })
+
+        it('Exception Test: returns 403 when access token is signed with the wrong secret', async () => {
+            const { seat } = await createSeatFixture(prisma)
+            const badToken = jwt.sign(
+                { user_id: TEST_USER_UUID, user_email: TEST_USER_EMAIL },
+                'totally-wrong-secret',
+                { expiresIn: 900 }
+            )
+
+            const res = await supertest(app.server)
+                .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${badToken}`)
+                .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
+
+            expect(res.status).toBe(403)
+        })
+
+        // ── Seat / DB state ──────────────────────────────────────────────────────
+        it('Exception Test: returns 409 when a seat_id does not exist in the database', async () => {
             const nonExistentSeatId = '00000000-0000-0000-0000-000000000000'
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [nonExistentSeatId], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(409)
@@ -220,6 +267,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(409)
@@ -231,6 +279,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(res.status).toBe(409)
@@ -239,11 +288,9 @@ describe('Tickets Routes E2E', () => {
     })
 
     // ─── POST /tickets/payment/intent ────────────────────────────────────────────
-
     describe('POST /tickets/payment/intent', () => {
 
-        // ── Schema validation (400) ──────────────────────────────────────────────
-
+        // ── Schema validation (400) — Fastify rejects before the handler runs ────
         it('Exception Test: returns 400 when reservation_token is missing', async () => {
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
@@ -318,11 +365,45 @@ describe('Tickets Routes E2E', () => {
             expect(res.status).toBe(400)
         })
 
-        // ── Token validation (403) ───────────────────────────────────────────────
+        // ── Access token validation (403) ────────────────────────────────────────
+        it('Exception Test: returns 403 when Authorization header is missing', async () => {
+            const res = await supertest(app.server)
+                .post('/tickets/payment/intent')
+                .send({
+                    reservation_token: 'any-token',
+                    user_uuid: TEST_USER_UUID,
+                    idempotency_key: TEST_IDEMPOTENCY_KEY,
+                    payment_method: 'SUCCESS_VISA'
+                })
 
+            expect(res.status).toBe(403)
+        })
+
+        it('Exception Test: returns 403 when access token is signed with the wrong secret', async () => {
+            const badToken = jwt.sign(
+                { user_id: TEST_USER_UUID, user_email: TEST_USER_EMAIL },
+                'totally-wrong-secret',
+                { expiresIn: 900 }
+            )
+
+            const res = await supertest(app.server)
+                .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${badToken}`)
+                .send({
+                    reservation_token: 'any-token',
+                    user_uuid: TEST_USER_UUID,
+                    idempotency_key: TEST_IDEMPOTENCY_KEY,
+                    payment_method: 'SUCCESS_VISA'
+                })
+
+            expect(res.status).toBe(403)
+        })
+
+        // ── Reservation token validation (403) ───────────────────────────────────
         it('Equivalence Test: returns 403 when reservation_token is a garbage string', async () => {
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token: 'not.a.real.jwt',
                     user_uuid: TEST_USER_UUID,
@@ -342,6 +423,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token: wrongToken,
                     user_uuid: TEST_USER_UUID,
@@ -361,6 +443,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token: expiredToken,
                     user_uuid: TEST_USER_UUID,
@@ -377,6 +460,7 @@ describe('Tickets Routes E2E', () => {
             // Reserve the seat to get a valid token (signed for TEST_USER_UUID)
             const reserveRes = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(reserveRes.status).toBe(200)
@@ -386,6 +470,7 @@ describe('Tickets Routes E2E', () => {
             const differentUser = '00000000-0000-0000-0000-000000000002'
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token,
                     user_uuid: differentUser,
@@ -397,13 +482,13 @@ describe('Tickets Routes E2E', () => {
         })
 
         // ── Seat lock expiry (409) ───────────────────────────────────────────────
-
         it('Equivalence Test: returns 409 when the Redis seat lock has expired after a valid reservation', async () => {
             const { seat } = await createSeatFixture(prisma)
 
             // Reserve the seat — this sets the Redis lock
             const reserveRes = await supertest(app.server)
                 .post('/tickets/reserve')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
             expect(reserveRes.status).toBe(200)
@@ -414,6 +499,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token,
                     user_uuid: TEST_USER_UUID,
@@ -428,11 +514,11 @@ describe('Tickets Routes E2E', () => {
 
         // ── Idempotency (200 early return) ───────────────────────────────────────
         //
-        // The idempotency check in the service queries the DB for an existing order
-        // before ever verifying the JWT or checking Redis locks, so these tests can
-        // pass a syntactically valid but otherwise arbitrary reservation_token.
+        // The route validates the access token first, so a valid Authorization header
+        // is required. The service's idempotency check then fires before reservation
+        // token verification, so an arbitrary (but non-empty) reservation_token value
+        // is fine for these tests.
         // The Order model has a FK to User, so each test creates a User first.
-
         it('Equivalence Test: returns 200 with existing client_secret when a PENDING order already exists for the idempotency key', async () => {
             const existingClientSecret = 'pi_test_existing_client_secret'
 
@@ -453,6 +539,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token: 'any-non-null-token-value',
                     user_uuid: TEST_USER_UUID,
@@ -483,6 +570,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token: 'any-non-null-token-value',
                     user_uuid: TEST_USER_UUID,
@@ -512,6 +600,7 @@ describe('Tickets Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
                 .send({
                     reservation_token: 'any-non-null-token-value',
                     user_uuid: TEST_USER_UUID,

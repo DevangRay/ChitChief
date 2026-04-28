@@ -37,6 +37,7 @@ import ForbiddenError from '../../lib/custom_errors/ForbiddenError';
 
 const MAX_SEATS = 10;
 const USER_ID = 'user-uuid-1';
+const USER_EMAIL = 'test@example.com';
 const EVENT_ID = 'event-uuid-1';
 const IDEMPOTENCY_KEY = 'idem-key-uuid-1';
 const ORDER_ID = 'order-uuid-1';
@@ -89,7 +90,7 @@ vi.mock('stripe', () => {
             this.name = 'StripeCardError';
         }
     }
-    const mock = vi.fn().mockImplementation(function() {
+    const mock = vi.fn().mockImplementation(function () {
         return {
             paymentIntents: {
                 create: paymentIntentsCreateMock,
@@ -807,6 +808,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const result = await service.createPaymentIntent(
                     token,
                     USER_ID,
+                    USER_EMAIL,
                     IDEMPOTENCY_KEY,
                     "SUCCESS_VISA",
                 );
@@ -820,7 +822,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService();
 
                 await expect(
-                    service.createPaymentIntent(null as any, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(null as any, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -828,7 +830,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService();
 
                 await expect(
-                    service.createPaymentIntent('', USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent('', USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -839,7 +841,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, null as any, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, null as any, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -850,7 +852,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, '', IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, '', USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -861,7 +863,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, null as any, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, null as any, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -872,7 +874,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, '', "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, '', "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -883,7 +885,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, null as any),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, null as any),
                 ).rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
@@ -894,7 +896,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, 'pm_not_a_real_method' as any),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, 'pm_not_a_real_method' as any),
                 ).rejects.toBeInstanceOf(ForbiddenError);
             });
         });
@@ -903,7 +905,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
     // =========================================================================
     // 2. Reservation token validation
     // =========================================================================
-
     describe('reservation token validation', () => {
 
         describe('equivalence cases', () => {
@@ -914,7 +915,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -927,7 +928,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ForbiddenError);
             });
 
@@ -943,7 +944,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(wrongToken, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(wrongToken, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ForbiddenError);
             });
 
@@ -951,7 +952,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService();
 
                 await expect(
-                    service.createPaymentIntent('not.a.jwt', USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent('not.a.jwt', USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ForbiddenError);
             });
         });
@@ -965,7 +966,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 await expect(
-                    service.createPaymentIntent(token, 'different-user-uuid', IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, 'different-user-uuid', USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(ForbiddenError);
             });
 
@@ -976,7 +977,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds, tokenUserId: USER_ID });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -987,7 +988,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
     // =========================================================================
     // 3. Redis lock validation
     // =========================================================================
-
     describe('Redis seat lock validation', () => {
 
         describe('equivalence cases', () => {
@@ -998,7 +998,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds, lockState: 'valid' });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1011,7 +1011,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds, lockState: 'missing' });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(SeatConflictError);
             });
 
@@ -1022,7 +1022,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds, lockState: 'wrong-owner' });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(SeatConflictError);
             });
         });
@@ -1064,7 +1064,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const partialLockService = new TicketService(redisMock as any, prismaMock as any);
 
                 await expect(
-                    partialLockService.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    partialLockService.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(SeatConflictError);
             });
 
@@ -1092,7 +1092,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const partialLockService = new TicketService(redisMock as any, prismaMock as any);
 
                 await expect(
-                    partialLockService.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    partialLockService.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toBeInstanceOf(SeatConflictError);
             });
         });
@@ -1119,7 +1119,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const errorService = new TicketService(redisMock as any, prismaMock as any);
 
                 await expect(
-                    errorService.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    errorService.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toThrow();
             });
         });
@@ -1128,7 +1128,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
     // =========================================================================
     // 4. Payment method coverage — all enum values
     // =========================================================================
-
     describe('payment_method enum coverage', () => {
 
         describe('equivalence cases — success methods', () => {
@@ -1141,7 +1140,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                     const { service } = buildPaymentService({ seatIds });
 
                     const result = await service.createPaymentIntent(
-                        token, USER_ID, IDEMPOTENCY_KEY, method,
+                        token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, method,
                     );
 
                     expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1160,7 +1159,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "AUTH_REQUIRED",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "AUTH_REQUIRED",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1181,7 +1180,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                     paymentIntentsCreateMock.mockRejectedValueOnce(`Payment declined for method: ${method}`);
 
                     await expect(
-                        service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, method),
+                        service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, method),
                     ).rejects.toThrow();
                 },
             );
@@ -1191,7 +1190,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
     // =========================================================================
     // 5. Idempotency — existing order
     // =========================================================================
-
     describe('idempotency', () => {
 
         describe('equivalence cases', () => {
@@ -1205,7 +1203,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1222,7 +1220,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result.order_id).toBe(ORDER_ID);
@@ -1238,7 +1236,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 });
 
                 await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(paymentIntentsCreateMock).not.toHaveBeenCalled();
@@ -1251,7 +1249,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds, existingOrder: null });
 
                 await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(paymentIntentsCreateMock).toHaveBeenCalledTimes(1);
@@ -1262,7 +1260,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
     // =========================================================================
     // 6. Return value contract
     // =========================================================================
-
     describe('return value contract', () => {
 
         describe('equivalence cases', () => {
@@ -1273,7 +1270,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1286,7 +1283,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(typeof result.client_secret).toBe('string');
@@ -1300,7 +1297,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(typeof result.order_id).toBe('string');
@@ -1314,7 +1311,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 // STRIPE_CLIENT_SECRET is what our Stripe mock returns.
@@ -1330,7 +1327,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1343,7 +1340,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 const { service } = buildPaymentService({ seatIds });
 
                 const result = await service.createPaymentIntent(
-                    token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
                 );
 
                 expect(result).toMatchObject(EXPECTED_PAYMENT_INTENT_RETURN_OBJECT);
@@ -1354,7 +1351,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
     // =========================================================================
     // 7. Error propagation
     // =========================================================================
-
     describe('error propagation', () => {
 
         describe('exception cases', () => {
@@ -1368,7 +1364,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 });
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toThrow();
             });
 
@@ -1383,7 +1379,7 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 );
 
                 await expect(
-                    service.createPaymentIntent(token, USER_ID, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
                 ).rejects.toThrow();
             });
         });

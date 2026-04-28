@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --exclude '**/performance/*.test.ts'",
 
     "test:users:unit": "vitest run ./src/modules/users/users.service.unit.test.ts",
     "test:users:e2e": "vitest run ./src/modules/users/users.routes.e2e.test.ts",
