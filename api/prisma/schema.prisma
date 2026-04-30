@@ -43,6 +43,7 @@ model Event {
   created_at DateTime @default(now())
   seats Seat[]
 
+  @@unique([date, venue])
   @@index([date])
   @@index([venue])
 }
