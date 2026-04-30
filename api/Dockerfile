@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
 RUN npm ci
 
 COPY tsconfig.json ./
@@ -29,6 +30,7 @@ COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Schema + migration files (needed for migrate deploy)
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
 
 USER node
 
