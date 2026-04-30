@@ -5,11 +5,15 @@
     * `docker compose down`
         * run with flag `-v` to clear the slate
 * Run Prisma migration
-    * `npx prisma migrate dev --name init`
+    * Runs automatically in docker-compose.yaml
 * Re-generating prisma
     * `npx prisma generate`
 * Run Prisma seed code
-    * `npx prisma db seed`
+    * Runs automatically in docker-compose.yaml
+* Locally see Postgres DB
+    * `npx prisma studio`
+    * May have to define local DB string, stored in /api/.env as LOCAL_PRISMA_DATABASE_URL for reference
+        * Add parameter `--url "${LOCAL_PRISMA_DATABASE_URL}"`
 * Connect Stripe webhook
     * `stripe listen --forward-to localhost:3000/webhooks/payment/confirm`
 * Resend emails

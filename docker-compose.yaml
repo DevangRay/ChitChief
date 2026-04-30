@@ -1,66 +1,21 @@
 services:
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    restart: unless-stopped
-    environment:
-      - NODE_ENV=production
-      - BACKEND_SERVER_HOST=${BACKEND_SERVER_HOST:-0.0.0.0}
-      - BACKEND_SERVER_PORT=${BACKEND_SERVER_PORT:-3000}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:?POSTGRES_USER}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD}@postgres:5432/ticketing
-      - REDIS_URL=${REDIS_URL:?REDIS_URL}
-      - SIGNING_SECRET=${SIGNING_SECRET:?SIGNING_SECRET}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY}
-      - STRIPE_ENDPOINT_SECRET=${STRIPE_ENDPOINT_SECRET:?STRIPE_ENDPOINT_SECRET}
-      - RESEND_SECRET_KEY=${RESEND_SECRET_KEY:?RESEND_SECRET_KEY}
-    depends_on:
-      prisma-db-migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-
-  worker:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    command: node dist/worker.js
-    restart: unless-stopped
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:?POSTGRES_USER}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD}@postgres:5432/ticketing
-      - REDIS_URL=${REDIS_URL:?REDIS_URL}
-      - SIGNING_SECRET=${SIGNING_SECRET:?SIGNING_SECRET}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY}
-      - RESEND_SECRET_KEY=${RESEND_SECRET_KEY:?RESEND_SECRET_KEY}
-    healthcheck:
-      disable: true
-    depends_on:
-      prisma-db-migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      prisma:
-        condition: service_healthy
-
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD}
-      POSTGRES_DB: ticketing
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
   redis:
     image: redis:8-alpine
@@ -75,6 +30,69 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 60s
+
+  prisma-db-migrate:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed"
+    restart: on-failure
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # api:
+  #   build:
+  #     context: ./api
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   restart: unless-stopped
+  #   environment:
+  #     - NODE_ENV=production
+  #     - BACKEND_SERVER_HOST=${BACKEND_SERVER_HOST:-0.0.0.0}
+  #     - BACKEND_SERVER_PORT=${BACKEND_SERVER_PORT:-3000}
+  #     - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB}}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+  #     - SIGNING_SECRET=${SIGNING_SECRET:?SIGNING_SECRET}
+  #     - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY}
+  #     - STRIPE_ENDPOINT_SECRET=${STRIPE_ENDPOINT_SECRET:?STRIPE_ENDPOINT_SECRET}
+  #     - RESEND_SECRET_KEY=${RESEND_SECRET_KEY:?RESEND_SECRET_KEY}
+  #   depends_on:
+  #     prisma-db-migrate:
+  #       condition: service_completed_successfully
+  #     redis:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+
+  # worker:
+  #   build:
+  #     context: ./api
+  #     dockerfile: Dockerfile
+  #   command: node dist/worker.js
+  #   restart: unless-stopped
+  #   environment:
+  #     - NODE_ENV=production
+  #     - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB}}
+  #     - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+  #     - SIGNING_SECRET=${SIGNING_SECRET:?SIGNING_SECRET}
+  #     - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY}
+  #     - RESEND_SECRET_KEY=${RESEND_SECRET_KEY:?RESEND_SECRET_KEY}
+  #   healthcheck:
+  #     disable: true
+  #   depends_on:
+  #     prisma-db-migrate:
+  #       condition: service_completed_successfully
+  #     redis:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
 
 volumes:
   postgres_data:
