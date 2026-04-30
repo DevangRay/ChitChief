@@ -23,9 +23,13 @@ export async function buildApp() {
         credentials: true
     })
     await app.register(fastifyRateLimit, {
-        max: 100,
+        max: 500,
         timeWindow: '1 minute',
-        ban: 10
+        ban: 10,
+        // by default allow localhost for testing/with option to configure more IPs for staging/testing in CI/CD pipeline
+        allowList: (process.env.RATE_LIMIT_ALLOWLIST ?? '127.0.0.1,::1')
+            .split(',')
+            .map(ip => ip.trim())
     })
     await app.register(fastifyHelmet);
 
