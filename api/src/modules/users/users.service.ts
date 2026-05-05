@@ -5,6 +5,7 @@ type UserProfile = {
     email: string;
     username: string;
     created_at: Date;
+    user_uuid: string;
     refresh_token_expires_at: Date | null;
 };
 
@@ -47,18 +48,33 @@ export class UserService {
             email: user.email,
             username: user.username,
             created_at: user.created_at,
+            user_uuid: user.id,
             refresh_token_expires_at: user.refresh_token[0]?.expires_at ?? null,
         };
     }
 
     async getOrders(user_id: string): Promise<OrderSummary[]> {
-        console.log('[getProfile] Verifying parameters');
+        console.log('[getOrders] Verifying parameters');
         if (!user_id) {
             throw new ResourceNotFoundError("Invalid user_id provided.")
         }
-        console.log('[getProfile] Parameters verified');
+        console.log('[getOrders] Parameters verified');
 
-        console.log('[getProfile] Retrieving order');
+        console.log('[getOrders] Retrieving user');
+        const user = await this.prisma.user.findUnique({
+            where: { id: user_id },
+            include: { refresh_token: true }
+        });
+
+        if (!user) {
+            throw new ResourceNotFoundError("User not found.");
+        }
+        if (!user.refresh_token[0]) {
+            throw new ResourceNotFoundError("Refresh token not found.");
+        }
+        console.log('[getOrders] Found user:', user.id);
+
+        console.log('[getOrders] Retrieving order');
         const orders = await this.prisma.order.findMany({
             where: { user_id: user_id },
             include: {
