@@ -1,10 +1,6 @@
 import { type FastifySchema } from "fastify";
 
 export const confirmPaymentSchema: FastifySchema = {
-    body: {
-        type: "string",
-        format: "binary"
-    },
     headers: {
         type: "object",
         required: ["stripe-signature"],

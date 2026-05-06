@@ -8,6 +8,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 export default async function routes(fastify: FastifyInstance, options: Object) {
     const service = new WebhooksService(fastify.prisma, fastify.redis);
 
+    fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, payload, done) => {
+        done(null, payload)
+    });
+
     fastify.post('/payment/confirm', { schema: confirmPaymentSchema }, async (request, reply) => {
         let event;
         try {
@@ -46,8 +50,4 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
         return reply.status(200).send({ recieved: true })
     })
-
-    fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, payload, done) => {
-        done(null, payload)
-    });
 }
