@@ -156,7 +156,9 @@ describe('Users Routes E2E', () => {
     describe('GET /users/me/orders', () => {
 
         it('Equivalence Test: returns 200 with an empty array when the user has no orders', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
             const token = makeAccessToken()
 
             const res = await supertest(app.server)
@@ -169,7 +171,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Equivalence Test: returns 200 with a list of orders for the authenticated user', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+            
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z') }
             })
@@ -190,7 +196,6 @@ describe('Users Routes E2E', () => {
             await prisma.orderSeats.create({
                 data: { order_id: order.id, seat_id: seat.id, price_at_purchase: 10000 }
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -202,7 +207,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Equivalence Test: order response shape matches the expected schema', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z'), description: 'A great show' }
             })
@@ -223,7 +232,6 @@ describe('Users Routes E2E', () => {
             await prisma.orderSeats.create({
                 data: { order_id: order.id, seat_id: seat.id, price_at_purchase: 10000 }
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -242,7 +250,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Equivalence Test: event_description is null when the event has no description', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z') }
             })
@@ -263,7 +275,6 @@ describe('Users Routes E2E', () => {
             await prisma.orderSeats.create({
                 data: { order_id: order.id, seat_id: seat.id, price_at_purchase: 10000 }
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -274,7 +285,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Equivalence Test: seat_names are formatted as row+number (e.g. "A1", "B3")', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z') }
             })
@@ -295,7 +310,6 @@ describe('Users Routes E2E', () => {
             await prisma.orderSeats.create({
                 data: { order_id: order.id, seat_id: seat.id, price_at_purchase: 10000 }
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -306,7 +320,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Equivalence Test: total_price is the sum of price_at_purchase across all seats in the order', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z') }
             })
@@ -333,7 +351,6 @@ describe('Users Routes E2E', () => {
                     { order_id: order.id, seat_id: seat2.id, price_at_purchase: 20000 },
                 ]
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -344,7 +361,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Boundary Test: orders with multiple seats list all seat names', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z') }
             })
@@ -375,7 +396,6 @@ describe('Users Routes E2E', () => {
                     { order_id: order.id, seat_id: seat3.id, price_at_purchase: 15000 },
                 ]
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -389,7 +409,11 @@ describe('Users Routes E2E', () => {
         })
 
         it('Boundary Test: orders are returned in descending created_at order (most recent first)', async () => {
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             const event = await prisma.event.create({
                 data: { name: 'Test Event', venue: 'Test Venue', date: new Date('2027-06-15T20:00:00Z') }
             })
@@ -425,7 +449,6 @@ describe('Users Routes E2E', () => {
             })
             await prisma.orderSeats.create({ data: { order_id: olderOrder.id, seat_id: seat1.id, price_at_purchase: 10000 } })
             await prisma.orderSeats.create({ data: { order_id: newerOrder.id, seat_id: seat2.id, price_at_purchase: 10000 } })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
@@ -438,7 +461,12 @@ describe('Users Routes E2E', () => {
 
         it('Equivalence Test: only returns orders belonging to the authenticated user, not other users', async () => {
             const OTHER_USER_UUID = '00000000-0000-0000-0000-000000000002'
+            
+            const futureExpiry = new Date(Date.now() + 60 * 60 * 1000)
             await createUser()
+            await createRefreshToken(futureExpiry)
+            const token = makeAccessToken()
+
             await prisma.user.create({
                 data: { id: OTHER_USER_UUID, email: 'other@example.com', username: 'otheruser', password_hash: 'hashed-password' }
             })
@@ -462,7 +490,6 @@ describe('Users Routes E2E', () => {
             await prisma.orderSeats.create({
                 data: { order_id: otherOrder.id, seat_id: seat.id, price_at_purchase: 10000 }
             })
-            const token = makeAccessToken()
 
             const res = await supertest(app.server)
                 .get('/users/me/orders')
