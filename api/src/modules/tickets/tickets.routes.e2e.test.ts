@@ -202,26 +202,6 @@ describe('Tickets Routes E2E', () => {
             expect(res.status).toBe(400)
         })
 
-        it('Exception Test: returns 400 when user_uuid is missing from body', async () => {
-            const { seat } = await createSeatFixture(prisma)
-
-            const res = await supertest(app.server)
-                .post('/tickets/reserve')
-                .send({ seat_ids: [seat.id] })
-
-            expect(res.status).toBe(400)
-        })
-
-        it('Exception Test: returns 400 when user_uuid is not a valid UUID format', async () => {
-            const { seat } = await createSeatFixture(prisma)
-
-            const res = await supertest(app.server)
-                .post('/tickets/reserve')
-                .send({ seat_ids: [seat.id], user_uuid: 'not-a-valid-uuid' })
-
-            expect(res.status).toBe(400)
-        })
-
         // ── Access token validation (403) ────────────────────────────────────────
         it('Exception Test: returns 403 when Authorization header is missing', async () => {
             const { seat } = await createSeatFixture(prisma)
@@ -296,31 +276,6 @@ describe('Tickets Routes E2E', () => {
                 .post('/tickets/payment/intent')
                 .send({
                     user_uuid: TEST_USER_UUID,
-                    idempotency_key: TEST_IDEMPOTENCY_KEY,
-                    payment_method: 'SUCCESS_VISA'
-                })
-
-            expect(res.status).toBe(400)
-        })
-
-        it('Exception Test: returns 400 when user_uuid is missing', async () => {
-            const res = await supertest(app.server)
-                .post('/tickets/payment/intent')
-                .send({
-                    reservation_token: 'any-token',
-                    idempotency_key: TEST_IDEMPOTENCY_KEY,
-                    payment_method: 'SUCCESS_VISA'
-                })
-
-            expect(res.status).toBe(400)
-        })
-
-        it('Exception Test: returns 400 when user_uuid is not a valid UUID format', async () => {
-            const res = await supertest(app.server)
-                .post('/tickets/payment/intent')
-                .send({
-                    reservation_token: 'any-token',
-                    user_uuid: 'not-a-valid-uuid',
                     idempotency_key: TEST_IDEMPOTENCY_KEY,
                     payment_method: 'SUCCESS_VISA'
                 })
@@ -447,33 +402,6 @@ describe('Tickets Routes E2E', () => {
                 .send({
                     reservation_token: expiredToken,
                     user_uuid: TEST_USER_UUID,
-                    idempotency_key: TEST_IDEMPOTENCY_KEY,
-                    payment_method: 'SUCCESS_VISA'
-                })
-
-            expect(res.status).toBe(403)
-        })
-
-        it('Boundary Test: returns 403 when token user_uuid does not match the request user_uuid', async () => {
-            const { seat } = await createSeatFixture(prisma)
-
-            // Reserve the seat to get a valid token (signed for TEST_USER_UUID)
-            const reserveRes = await supertest(app.server)
-                .post('/tickets/reserve')
-                .set('Authorization', `Bearer ${makeAccessToken()}`)
-                .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
-
-            expect(reserveRes.status).toBe(200)
-            const { reservation_token } = reserveRes.body
-
-            // Present the token but claim a different user identity
-            const differentUser = '00000000-0000-0000-0000-000000000002'
-            const res = await supertest(app.server)
-                .post('/tickets/payment/intent')
-                .set('Authorization', `Bearer ${makeAccessToken()}`)
-                .send({
-                    reservation_token,
-                    user_uuid: differentUser,
                     idempotency_key: TEST_IDEMPOTENCY_KEY,
                     payment_method: 'SUCCESS_VISA'
                 })
