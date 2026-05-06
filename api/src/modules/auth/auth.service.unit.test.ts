@@ -280,6 +280,13 @@ describe('AuthService.registerUser — behavior', () => {
                 await expect(service.registerUser(USER_NAME, null as any, PASSWORD))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
+
+            it('throws ResourceNotFoundError when email is undefined', async () => {
+                const { service } = buildService();
+
+                await expect(service.registerUser(USER_NAME, undefined as any, PASSWORD))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
         });
 
         describe('exception cases — missing password', () => {
@@ -294,6 +301,13 @@ describe('AuthService.registerUser — behavior', () => {
                 const { service } = buildService();
 
                 await expect(service.registerUser(USER_NAME, EMAIL, null as any))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+
+            it('throws ResourceNotFoundError when password is undefined', async () => {
+                const { service } = buildService();
+
+                await expect(service.registerUser(USER_NAME, EMAIL, undefined as any))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -374,6 +388,24 @@ describe('AuthService.registerUser — behavior', () => {
                 expect(() =>
                     jwt.verify(result.access_token, process.env.SIGNING_SECRET!)
                 ).not.toThrow();
+            });
+        });
+    });
+
+    // =========================================================================
+    // 4. Error propagation
+    // =========================================================================
+
+    describe('error propagation', () => {
+
+        describe('exception cases', () => {
+            it('propagates unexpected errors thrown while creating the user', async () => {
+                const { service } = buildService({
+                    userCreateError: new Error('DB write timeout'),
+                });
+
+                await expect(service.registerUser(USER_NAME, EMAIL, PASSWORD))
+                    .rejects.toThrow('DB write timeout');
             });
         });
     });
@@ -494,8 +526,19 @@ describe('AuthService.login — behavior', () => {
                 expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
             });
 
-            it('issues new tokens when the only existing refresh token is expired', async () => {
+            it('returns the same refresh_token value when the session is already active', async () => {
                 const { service } = buildService({
+                    existingUser: makeUser(),
+                    existingToken: makeRefreshToken(),
+                });
+
+                const result = await service.login(USER_NAME, PASSWORD);
+
+                expect(result.refresh_token).toBe(REFRESH_TOKEN);
+            });
+
+            it('issues new tokens when the only existing refresh token is expired', async () => {
+                const { service, prismaMock } = buildService({
                     existingUser: makeUser(),
                     existingToken: makeExpiredRefreshToken(),
                 });
@@ -503,6 +546,7 @@ describe('AuthService.login — behavior', () => {
                 const result = await service.login(USER_NAME, PASSWORD);
 
                 expect(result).toMatchObject(EXPECTED_AUTH_RETURN_OBJECT);
+                expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
             });
 
             it('issues new tokens when no existing refresh token is found', async () => {
@@ -740,11 +784,14 @@ describe('AuthService.refresh — behavior', () => {
         });
 
         describe('boundary cases', () => {
-            it('throws when the refresh token is expired', async () => {
-                const { service } = buildService({ existingToken: makeExpiredRefreshToken() });
+            it('throws ForbiddenError when the refresh token is expired', async () => {
+                const expiredTokenWithUser = makeRefreshTokenWithUser({
+                    expires_at: new Date(Date.now() - 1_000),
+                });
+                const { service } = buildService({ existingToken: expiredTokenWithUser });
 
                 await expect(service.refresh(makeValidJwt(), REFRESH_TOKEN))
-                    .rejects.toThrow();
+                    .rejects.toBeInstanceOf(ForbiddenError);
             });
         });
     });

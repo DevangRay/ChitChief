@@ -19,6 +19,7 @@
     "test:tickets:unit": "vitest run ./src/modules/tickets/tickets.service.unit.test.ts",
     "test:tickets:e2e": "vitest run ./src/modules/tickets/tickets.routes.e2e.test.ts",
     "test:webhooks:unit": "vitest run ./src/modules/webhooks/webhooks.service.unit.test.ts",
+    "test:webhooks:e2e": "vitest run ./src/modules/webhooks/webhooks.routes.e2e.test.ts",
     "test:performance:concurrent": "node src/test/run-performance.mjs concurrent_reservation",
     "test:performance:e2e": "node src/test/run-performance.mjs e2e_load",
     "test:performance:read": "node src/test/run-performance.mjs read_load",

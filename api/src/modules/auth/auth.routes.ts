@@ -111,6 +111,8 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
             if (error instanceof ResourceNotFoundError) {
                 return reply.status(404).send({ message: error.message });
+            } else if (error instanceof ForbiddenError) {
+                return reply.status(403).send({ message: error.message });
             } else {
                 return reply.status(500).send({ message: 'Internal server error.' });
             }

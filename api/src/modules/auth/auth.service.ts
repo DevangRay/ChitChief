@@ -155,23 +155,37 @@ export class AuthService {
         let refresh_token;
         if (!does_session_exist) {
             // create refresh token
-            console.log("[registerUser] Creating user refresh token.");
-
+            console.log("[login] Creating user refresh token.");
             refresh_token = await this.prisma.refreshToken.create({
                 data: {
                     user_id: existing_user.id
                 }
             })
+            console.log("[login] Created refresh token:", refresh_token);
+        } else if (does_session_exist.expires_at.getTime() < Date.now()) {
+            console.log("[login] Refresh token exists, but is expired.")
+            const deleted_result = await this.prisma.refreshToken.delete({
+                where: {
+                    id: does_session_exist.id
+                }
+            })
+            console.log("[login] Refresh token deleted: ", deleted_result)
 
-            console.log("[registerUser] Created refresh token:", refresh_token);
+            console.log("[login] Creating user refresh token.");
+            refresh_token = await this.prisma.refreshToken.create({
+                data: {
+                    user_id: existing_user.id
+                }
+            })
+            console.log("[login] Created refresh token:", refresh_token);
         } else {
             console.log("[login] Found refresh token:", does_session_exist);
-            console.log("[registerUser] Refresh token exists, can return existing auth.");
+            console.log("[login] Refresh token exists, can return existing auth.");
             refresh_token = does_session_exist;
         }
 
         // return access_token and refresh token (same shape as registerAuth)
-        console.log("[registerUser] Creating user access token and returning.");
+        console.log("[login] Creating user access token and returning.");
         const signable_payload = {
             user_id: existing_user.id,
             user_email: existing_user.email
@@ -250,6 +264,9 @@ export class AuthService {
         if (!refresh_token_exists) {
             console.log("[refresh] Refresh token does not exist.");
             throw new ResourceNotFoundError("Invalid refresh token.");
+        } else if (refresh_token_exists.expires_at.getTime() < Date.now()) {
+            console.log("[refresh] Refresh token is expired.");
+            throw new ForbiddenError("Refresh token is expired.");
         }
         console.log("[refresh] Retrieved token:", refresh_token_exists);
 

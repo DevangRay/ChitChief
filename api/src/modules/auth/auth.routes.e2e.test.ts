@@ -150,6 +150,23 @@ describe('Auth Routes E2E', () => {
             expect(res.body.refresh_token).toBe(initial_refresh_token)
         })
 
+        it('Boundary Test: returns 200 with a new refresh_token when the existing session has expired', async () => {
+            const { body: { refresh_token: expired_token } } = await registerUser(app)
+
+            await prisma.refreshToken.updateMany({
+                where: { token: expired_token },
+                data: { expires_at: new Date(Date.now() - 1000) }
+            })
+
+            const res = await supertest(app.server)
+                .post('/auth/login')
+                .send({ user_name: TEST_USER_NAME, password: TEST_USER_PASSWORD })
+
+            expect(res.status).toBe(200)
+            expect(res.body).toHaveProperty('refresh_token')
+            expect(res.body.refresh_token).not.toBe(expired_token)
+        })
+
         it('Exception Test: returns 400 when user_name is missing from the body', async () => {
             const res = await supertest(app.server)
                 .post('/auth/login')
@@ -282,6 +299,21 @@ describe('Auth Routes E2E', () => {
                 .send({ jwt_token: 'any-token', refresh_token: '00000000-0000-0000-0000-000000000000' })
 
             expect(res.status).toBe(404)
+        })
+
+        it('Boundary Test: returns 403 when the refresh_token is expired', async () => {
+            const { body: { access_token, refresh_token } } = await registerUser(app)
+
+            await prisma.refreshToken.updateMany({
+                where: { token: refresh_token },
+                data: { expires_at: new Date(Date.now() - 1000) }
+            })
+
+            const res = await supertest(app.server)
+                .post('/auth/refresh')
+                .send({ jwt_token: access_token, refresh_token })
+
+            expect(res.status).toBe(403)
         })
 
         it('Exception Test: returns 400 when jwt_token is missing from the body', async () => {
