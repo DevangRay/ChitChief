@@ -159,6 +159,16 @@ describe('Events Routes E2E', () => {
             expect(res.body).not.toHaveProperty('_count')
         })
 
+        it('Boundary Test: returns seat_count of 0 when all seats are RESERVED or SOLD', async () => {
+            const { event } = await createSeatFixture(prisma, { status: 'SOLD' })
+
+            const res = await supertest(app.server)
+                .get(`/events/${event.id}`)
+
+            expect(res.status).toBe(200)
+            expect(res.body.seat_count).toBe(0)
+        })
+
         it('Exception Test: returns 400 for invalid UUID format', async () => {
             const res = await supertest(app.server)
                 .get('/events/not-a-valid-uuid')
@@ -272,6 +282,22 @@ describe('Events Routes E2E', () => {
                 .get(`/events/${event.id}/seats?status=SOLD`)
 
             expect(res.status).toBe(404)
+        })
+
+        it('Equivalence Test: each seat in the response has the expected schema fields', async () => {
+            const { event } = await createSeatFixture(prisma, { status: 'AVAILABLE' })
+
+            const res = await supertest(app.server)
+                .get(`/events/${event.id}/seats`)
+
+            expect(res.status).toBe(200)
+            const seat = res.body[0]
+            expect(seat).toHaveProperty('id')
+            expect(seat).toHaveProperty('event_id', event.id)
+            expect(seat).toHaveProperty('row')
+            expect(seat).toHaveProperty('number')
+            expect(seat).toHaveProperty('price')
+            expect(seat).toHaveProperty('seat_status')
         })
 
         it('Exception Test: returns 400 for invalid status query param', async () => {

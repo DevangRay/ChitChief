@@ -92,12 +92,22 @@ describe('EventService', () => {
             expect(result).not.toHaveProperty('_count');
         })
 
-        it('Boundary Test: returns empty object when event does not exist', async () => {
+        it('Boundary Test: returns null when event does not exist', async () => {
             mockPrisma.event.findUnique.mockResolvedValue(null);
 
             const result = await service.getEventById(validId);
 
             expect(result).toEqual(null);
+        })
+
+        it('Boundary Test: returns seat_count of 0 when the event has no available seats', async () => {
+            const eventWithNoAvailableSeats = { ...mockEvent, _count: { seats: 0 } };
+            mockPrisma.event.findUnique.mockResolvedValue(eventWithNoAvailableSeats);
+
+            const result = await service.getEventById(validId);
+
+            expect(result).not.toBeNull();
+            expect(result!.seat_count).toBe(0);
         })
 
         it('Exception Test: rethrows error on DB failure', async () => {
