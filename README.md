@@ -77,11 +77,14 @@
         * `POST /tickets/puchase/intent` would create the PaymentIntent and return the client_secret.
         * Client-side would use something like `Stripe.js` to get payment information and confirm the payment
     * The webhook `POST /ticekts/purchase/confirm` would still exist to handle orders after confirmation (handling both success and error)
-* 3DS authentication requires customer interaction and is out of scope for a backend-only demo. In production, this would be handled with either:
-    * Stripe Checkout (hosted pages)
-    * Frontend integration with Stripe.js
-    * Mobile app with Stripe SDK
-* In this demo, payments requiring 3DS are marked as failed and seats released
+* 3DS authentication requires customer interaction and is out of scope for a backend-only demo.
+    * In this demo, payments requiring 3DS are marked as failed and seats released
+    * In production, this would be handled with either:
+        * Stripe Checkout (hosted pages)
+        * Frontend integration with Stripe.js
+        * Mobile app with Stripe SDK
+* With the free-tier on Neon, the deployed PostgreSQL DB scales down in periods of inactivity. This results in some latency for the first query, but once the instance is cold-started subsequent queries will have normal performance.
+
 
 ## Glossary
 * Re-generating prisma
