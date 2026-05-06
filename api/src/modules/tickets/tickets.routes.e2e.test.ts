@@ -510,6 +510,37 @@ describe('Tickets Routes E2E', () => {
             expect(res.body.order_id).toBe(existingOrder.id)
         })
 
+        it('Boundary Test: does not return 409 when a FAILED order exists for the idempotency key (retry is allowed)', async () => {
+            await prisma.user.create({
+                data: { id: TEST_USER_UUID, email: 'test@test.com', username: 'testuser', password_hash: 'hash' }
+            })
+            const stripePaymentInfo = await prisma.stripePaymentInfo.create({
+                data: { payment_intent_id: 'pi_test_failed_intent', client_secret: 'pi_test_failed_secret' }
+            })
+            await prisma.order.create({
+                data: {
+                    user_id: TEST_USER_UUID,
+                    order_status: OrderStatus.FAILED,
+                    idempotency_key: TEST_IDEMPOTENCY_KEY,
+                    stripe_payment_id: stripePaymentInfo.id
+                }
+            })
+
+            const res = await supertest(app.server)
+                .post('/tickets/payment/intent')
+                .set('Authorization', `Bearer ${makeAccessToken()}`)
+                .send({
+                    reservation_token: 'any-non-null-token-value',
+                    user_uuid: TEST_USER_UUID,
+                    idempotency_key: TEST_IDEMPOTENCY_KEY,
+                    payment_method: 'SUCCESS_VISA'
+                })
+
+            // The service proceeds past idempotency check for FAILED orders.
+            // It will ultimately fail (bad reservation token) but NOT with 409.
+            expect(res.status).not.toBe(409)
+        })
+
         it('Boundary Test: returns 409 when an EXPIRED order exists for the idempotency key', async () => {
             await prisma.user.create({
                 data: { id: TEST_USER_UUID, email: 'test@test.com', username: 'testuser', password_hash: 'hash' }

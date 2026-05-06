@@ -30,6 +30,7 @@ import { seatLockFromId } from '../../lib/redis-keys';
 import SeatConflictError from '../../lib/custom_errors/SeatConflictError';
 import ResourceNotFoundError from '../../lib/custom_errors/ResourceNotFoundError';
 import ForbiddenError from '../../lib/custom_errors/ForbiddenError';
+import ConflictError from '../../lib/custom_errors/ConflictError';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -180,7 +181,7 @@ const buildPaymentService = ({
     // Redis: get() returns the owner string or null depending on lockState.
     const redisMock = {
         ...makeRedisMock('OK'),   // keep eval/pipeline/del stubs
-        get: vi.fn((key: string) => {
+        get: vi.fn((_key: string) => {
             if (lockState === 'missing') return Promise.resolve(null);
             if (lockState === 'wrong-owner') return Promise.resolve('other-user-uuid');
             return Promise.resolve(tokenUserId); // 'valid'
@@ -367,7 +368,7 @@ describe('TicketService.reserveSeats — behavior', () => {
                 const seatIds = makeSeatIds(MAX_SEATS + 1);
                 const { service } = buildService({ seatIds });
 
-                await expect(service.reserveSeats([], USER_ID)).rejects.toThrow("Invalid number of seats provided.")
+                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
         });
 
@@ -702,6 +703,20 @@ describe('TicketService.reserveSeats — behavior', () => {
                 expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);
                 const payload = decodeToken(result.reservation_token);
                 expect(payload.expires_at).toBe(result.expires_at);
+            });
+
+            it('embeds a redis_locks array inside the reservation token matching the seat ids', async () => {
+                const seatIds = makeSeatIds(2);
+                const { service } = buildService({ seatIds });
+
+                const result = await service.reserveSeats(seatIds, USER_ID);
+
+                const payload = decodeToken(result.reservation_token);
+                expect(Array.isArray(payload.redis_locks)).toBe(true);
+                expect((payload.redis_locks as string[]).length).toBe(seatIds.length);
+                seatIds.forEach(id => {
+                    expect(payload.redis_locks).toContain(seatLockFromId(id));
+                });
             });
         });
 
@@ -1046,7 +1061,6 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                         .mockResolvedValueOnce(USER_ID)   // lock for seat 2
                         .mockResolvedValueOnce(null),     // lock for seat 3 is gone
                 };
-                const { service } = buildPaymentService({ seatIds });
                 // Override the redis mock on the service directly via the factory.
                 // Since buildPaymentService doesn't expose redis, we re-instantiate:
                 const prismaMock = {
@@ -1255,6 +1269,38 @@ describe('TicketService.createPaymentIntent — behavior', () => {
                 expect(paymentIntentsCreateMock).toHaveBeenCalledTimes(1);
             });
         });
+
+        describe('boundary cases — expired and failed orders', () => {
+            it('throws ConflictError when an EXPIRED order exists for the idempotency key', async () => {
+                const seatIds = makeSeatIds(2);
+                const lockIds = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, lockIds);
+                const { service } = buildPaymentService({
+                    seatIds,
+                    existingOrder: { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.EXPIRED },
+                });
+
+                await expect(
+                    service.createPaymentIntent(token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA"),
+                ).rejects.toBeInstanceOf(ConflictError);
+            });
+
+            it('creates a new PaymentIntent when a FAILED order exists for the idempotency key (retry allowed)', async () => {
+                const seatIds = makeSeatIds(2);
+                const lockIds = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, lockIds);
+                const { service } = buildPaymentService({
+                    seatIds,
+                    existingOrder: { id: ORDER_ID, client_secret: STRIPE_CLIENT_SECRET, order_status: OrderStatus.FAILED },
+                });
+
+                await service.createPaymentIntent(
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                );
+
+                expect(paymentIntentsCreateMock).toHaveBeenCalledTimes(1);
+            });
+        });
     });
 
     // =========================================================================
@@ -1316,6 +1362,23 @@ describe('TicketService.createPaymentIntent — behavior', () => {
 
                 // STRIPE_CLIENT_SECRET is what our Stripe mock returns.
                 expect(result.client_secret).toBe(STRIPE_CLIENT_SECRET);
+            });
+
+            it('passes the correct total price (sum of seat prices) to the Stripe PaymentIntent', async () => {
+                // makeAvailableSeats gives each seat price=10000, so 2 seats → amount=20000
+                const seatIds = makeSeatIds(2);
+                const lockIds = makeSeatLockIds(2);
+                const token = makeValidToken(seatIds, lockIds);
+                const { service } = buildPaymentService({ seatIds });
+
+                await service.createPaymentIntent(
+                    token, USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, "SUCCESS_VISA",
+                );
+
+                expect(paymentIntentsCreateMock).toHaveBeenCalledWith(
+                    expect.objectContaining({ amount: 20000 }),
+                    expect.anything(),
+                );
             });
         });
 
