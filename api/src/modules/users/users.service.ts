@@ -58,20 +58,6 @@ export class UserService {
         }
         console.log('[getOrders] Parameters verified');
 
-        console.log('[getOrders] Retrieving user');
-        const user = await this.prisma.user.findUnique({
-            where: { id: user_id },
-            include: { refresh_token: true }
-        });
-
-        if (!user) {
-            throw new ResourceNotFoundError("User not found.");
-        }
-        if (!user.refresh_token[0]) {
-            throw new ResourceNotFoundError("Refresh token not found.");
-        }
-        console.log('[getOrders] Found user:', user.id);
-
         console.log('[getOrders] Retrieving order');
         const orders = await this.prisma.order.findMany({
             where: { user_id: user_id },
