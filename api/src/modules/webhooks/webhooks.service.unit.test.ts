@@ -366,7 +366,50 @@ describe('WebhooksService.handleSuccess — behavior', () => {
     });
 
     // =========================================================================
-    // 5. Seat count mismatch — refund and revert
+    // 5. Email notification job
+    // =========================================================================
+
+    describe('email notification job', () => {
+
+        it('enqueues a send_success_message job after a successful order confirmation', async () => {
+            const { service, queueMock } = buildService();
+
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            expect(queueMock.add).toHaveBeenCalledWith(
+                'send_success_message',
+                expect.objectContaining({ email_target: USER_EMAIL }),
+                expect.anything(),
+            );
+        });
+
+        it('includes the order_id in the enqueued success job payload', async () => {
+            const { service, queueMock } = buildService({
+                orderUpdateResult: makeOrder({ id: ORDER_ID }),
+            });
+
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            expect(queueMock.add).toHaveBeenCalledWith(
+                'send_success_message',
+                expect.objectContaining({ order_id: ORDER_ID }),
+                expect.anything(),
+            );
+        });
+
+        it('does not enqueue an email job when the order is already CONFIRMED (early return)', async () => {
+            const { service, queueMock } = buildService({
+                findUniqueResult: makeOrder({ order_status: OrderStatus.CONFIRMED }),
+            });
+
+            await service.handleSuccess(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY, PAYMENT_INTENT);
+
+            expect(queueMock.add).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================================================
+    // 6. Seat count mismatch — refund and revert
     //
     // When sold_seats.count < connected_seat_ids.length, at least one seat was
     // already in a non-RESERVED state (race condition / double-booking).
@@ -416,7 +459,7 @@ describe('WebhooksService.handleSuccess — behavior', () => {
     });
 
     // =========================================================================
-    // 6. Error propagation
+    // 7. Error propagation
     // =========================================================================
 
     describe('error propagation', () => {
@@ -527,6 +570,17 @@ describe('WebhooksService.handleFailure — behavior', () => {
 
             expect(prismaMock.order.update).not.toHaveBeenCalled();
         });
+
+        it('proceeds to update the DB when the order is CONFIRMED (should mark as FAILED to reflect payment failure)', async () => {
+            const { service, prismaMock } = buildService({
+                findUniqueResult: makeOrder({ order_status: OrderStatus.CONFIRMED }),
+            });
+
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
+
+            expect(prismaMock.order.update).toHaveBeenCalled();
+            expect(prismaMock.order.update.mock.calls[0][0].data.order_status).toBe(OrderStatus.FAILED);
+        });
     });
 
     // =========================================================================
@@ -568,7 +622,50 @@ describe('WebhooksService.handleFailure — behavior', () => {
     });
 
     // =========================================================================
-    // 4. Edge cases
+    // 4. Email notification job
+    // =========================================================================
+
+    describe('email notification job', () => {
+
+        it('enqueues a send_failure_message job after updating the order to FAILED', async () => {
+            const { service, queueMock } = buildService();
+
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
+
+            expect(queueMock.add).toHaveBeenCalledWith(
+                'send_failure_message',
+                expect.objectContaining({ email_target: USER_EMAIL }),
+                expect.anything(),
+            );
+        });
+
+        it('includes the order_id in the enqueued failure job payload', async () => {
+            const { service, queueMock } = buildService({
+                orderUpdateResult: makeOrder({ id: ORDER_ID }),
+            });
+
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
+
+            expect(queueMock.add).toHaveBeenCalledWith(
+                'send_failure_message',
+                expect.objectContaining({ order_id: ORDER_ID }),
+                expect.anything(),
+            );
+        });
+
+        it('does not enqueue an email job when the order is already FAILED (early return)', async () => {
+            const { service, queueMock } = buildService({
+                findUniqueResult: makeOrder({ order_status: OrderStatus.FAILED }),
+            });
+
+            await service.handleFailure(USER_ID, USER_EMAIL, IDEMPOTENCY_KEY);
+
+            expect(queueMock.add).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================================================
+    // 5. Edge cases
     // =========================================================================
 
     describe('edge cases', () => {
@@ -581,7 +678,7 @@ describe('WebhooksService.handleFailure — behavior', () => {
     });
 
     // =========================================================================
-    // 5. Error propagation
+    // 6. Error propagation
     // =========================================================================
 
     describe('error propagation', () => {
