@@ -39,7 +39,7 @@ services:
     command: sh -c "npx prisma migrate deploy && npx prisma db seed"
     restart: on-failure
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL}
     depends_on:
       postgres:
         condition: service_healthy

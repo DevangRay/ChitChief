@@ -11,7 +11,7 @@ export async function sendPostPaymentEmail(order_was_successful: boolean, email_
         html_message = `<h1>Congratulations!</h1><p>Your order for seats ${seats.join(", ")} for ${event_name} has been confirmed.</p><p>For your records, your order confirmation number is: ${order_id}.</p>`
     } else {
         subject = 'Issue with your order'
-        html_message = `<h1>Action needed</h1><p>Your order for seats ${seats.join(", ")} for ${event_name} could not have been confirmed.</p><p>Please try purchasing again.</p>`
+        html_message = `<h1>Action needed</h1><p>Your order for seats ${seats.join(", ")} for ${event_name} could not be confirmed.</p><p>Please try purchasing again.</p>`
     }
 
     const { data, error } = await resend.emails.send({
