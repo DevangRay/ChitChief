@@ -246,57 +246,26 @@ describe('Auth Routes E2E', () => {
 
     describe('POST /auth/refresh', () => {
 
-        it('Equivalence Test: returns 200 with a new access_token and refresh_token', async () => {
+        it('Equivalence Test: returns 200 with a new access_token on valid credentials', async () => {
             const { body: { access_token, refresh_token } } = await registerUser(app)
 
             const res = await supertest(app.server)
                 .post('/auth/refresh')
-                .send({ jwt_token: access_token, refresh_token })
+                .set('Authorization', `Bearer ${access_token}`)
+                .send({ refresh_token })
 
             expect(res.status).toBe(200)
             expect(res.body).toHaveProperty('access_token')
-            expect(res.body).toHaveProperty('refresh_token')
-        })
-
-        it('Boundary Test: the new refresh_token is different from the original (token rotation)', async () => {
-            const { body: { access_token, refresh_token } } = await registerUser(app)
-
-            const res = await supertest(app.server)
-                .post('/auth/refresh')
-                .send({ jwt_token: access_token, refresh_token })
-
-            expect(res.status).toBe(200)
-            expect(res.body.refresh_token).not.toBe(refresh_token)
-        })
-
-        it('Boundary Test: the old refresh_token cannot be reused after a successful refresh', async () => {
-            const { body: { access_token, refresh_token: old_refresh_token } } = await registerUser(app)
-
-            await supertest(app.server)
-                .post('/auth/refresh')
-                .send({ jwt_token: access_token, refresh_token: old_refresh_token })
-
-            const res = await supertest(app.server)
-                .post('/auth/refresh')
-                .send({ jwt_token: access_token, refresh_token: old_refresh_token })
-
-            expect(res.status).toBe(404)
-        })
-
-        it('Boundary Test: succeeds even when the access_token is expired or arbitrary because the service only validates the refresh_token', async () => {
-            const { body: { refresh_token } } = await registerUser(app)
-
-            const res = await supertest(app.server)
-                .post('/auth/refresh')
-                .send({ jwt_token: 'this-can-be-any-non-empty-string', refresh_token })
-
-            expect(res.status).toBe(200)
+            expect(res.body).not.toHaveProperty('refresh_token')
         })
 
         it('Equivalence Test: returns 404 when the refresh_token does not exist', async () => {
+            const { body: { access_token } } = await registerUser(app)
+
             const res = await supertest(app.server)
                 .post('/auth/refresh')
-                .send({ jwt_token: 'any-token', refresh_token: '00000000-0000-0000-0000-000000000000' })
+                .set('Authorization', `Bearer ${access_token}`)
+                .send({ refresh_token: '00000000-0000-0000-0000-000000000000' })
 
             expect(res.status).toBe(404)
         })
@@ -311,12 +280,24 @@ describe('Auth Routes E2E', () => {
 
             const res = await supertest(app.server)
                 .post('/auth/refresh')
-                .send({ jwt_token: access_token, refresh_token })
+                .set('Authorization', `Bearer ${access_token}`)
+                .send({ refresh_token })
 
             expect(res.status).toBe(403)
         })
 
-        it('Exception Test: returns 400 when jwt_token is missing from the body', async () => {
+        it('Boundary Test: returns 403 when the access_token is invalid', async () => {
+            const { body: { refresh_token } } = await registerUser(app)
+
+            const res = await supertest(app.server)
+                .post('/auth/refresh')
+                .set('Authorization', 'Bearer invalid-token')
+                .send({ refresh_token })
+
+            expect(res.status).toBe(403)
+        })
+
+        it('Exception Test: returns 400 when the authorization header is missing', async () => {
             const res = await supertest(app.server)
                 .post('/auth/refresh')
                 .send({ refresh_token: 'any-token' })
@@ -325,9 +306,12 @@ describe('Auth Routes E2E', () => {
         })
 
         it('Exception Test: returns 400 when refresh_token is missing from the body', async () => {
+            const { body: { access_token } } = await registerUser(app)
+
             const res = await supertest(app.server)
                 .post('/auth/refresh')
-                .send({ jwt_token: 'any-token' })
+                .set('Authorization', `Bearer ${access_token}`)
+                .send({})
 
             expect(res.status).toBe(400)
         })

@@ -142,14 +142,20 @@ export const logoutSchema: FastifySchema = {
 }
 
 export const refreshSchema: FastifySchema = {
+    headers: {
+        type: "object",
+        required: ["authorization"],
+        properties: {
+            authorization: {
+                type: "string",
+                description: "Bearer JWT access token — 'Bearer <token>'"
+            }
+        }
+    },
     body: {
         type: "object",
-        required: ["jwt_token", "refresh_token"],
+        required: ["refresh_token"],
         properties: {
-            jwt_token: {
-                type: "string",
-                description: "Previously provided JWT signed token."
-            },
             refresh_token: {
                 type: "string",
                 description: "Previously provided refresh token."
@@ -161,8 +167,7 @@ export const refreshSchema: FastifySchema = {
             description: "Authentication tokens were succesfully rotated. The updated tokens are returned.",
             type: "object",
             properties: {
-                access_token: { type: "string" },
-                refresh_token: { type: "string" }
+                access_token: { type: "string" }
             }
         },
         404: {

@@ -6,6 +6,7 @@ import ConflictError from "../../lib/custom_errors/ConflictError.js";
 import { type Redis } from "ioredis";
 import { Queue } from "bullmq";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
+import type { TokenPayload } from "../../lib/verify-signed-token.js";
 
 const ACCESS_TOKEN_TTL_IN_MINUTES = 15;
 const REFRESH_TOKEN_TTL_IN_HOURS = 24;
@@ -239,11 +240,11 @@ export class AuthService {
         return
     }
 
-    async refresh(jwt_token: string, refresh_token: string) {
+    async refresh(payload: TokenPayload, refresh_token: string) {
         console.log("[refresh] Validating parameters.");
-        if (!jwt_token) {
-            console.log("[refresh] No jwt_token provided for.");
-            throw new ResourceNotFoundError("No jwt_token provided.")
+        if (!payload) {
+            console.log("[refresh] No payload provided for.");
+            throw new ResourceNotFoundError("No payload provided.")
         }
         if (!refresh_token) {
             console.log("[refresh] No refresh_token provided for.");
@@ -270,35 +271,13 @@ export class AuthService {
         }
         console.log("[refresh] Retrieved token:", refresh_token_exists);
 
-        const user_id = refresh_token_exists.user.id;
-        const user_email = refresh_token_exists.user.email;
-
-        // delete refresh_token
-        console.log("[refresh] Deleting refresh token.");
-        const deleted_refresh_token = await this.prisma.refreshToken.delete({
-            where: {
-                token: refresh_token
-            }
-        })
-        console.log("[refresh] Deleted token:", deleted_refresh_token);
-
-        // create new refresh_token
-        console.log("[refresh] Creating rotated refresh token.");
-        const rotated_refresh_token = await this.prisma.refreshToken.create({
-            data: {
-                user_id: user_id
-            }
-        })
-        console.log("[refresh] Rotated refresh token:", rotated_refresh_token);
-
-        // return new jwt_token and refresh_token
-        console.log("[refresh] Creating new JWT token and returning");
-        const signable_payload = {
-            user_id: user_id,
-            user_email: user_email
-        }
+        // return new jwt_token 
+        console.log("[refresh] Creating new JWT token and returning from existing payload:", payload);
         const signed_token = jwt.sign(
-            signable_payload,
+            {
+                user_id: payload.user_id,
+                user_email: payload.user_email
+            },
             process.env.SIGNING_SECRET!,
             {
                 // time must be given in seconds
@@ -306,21 +285,8 @@ export class AuthService {
             }
         );
 
-        console.log("[refresh] Queueing job to delete token after TTL");
-        this.reservation_queue.add(
-            'remove_refresh_token',
-            { refresh_token_id: rotated_refresh_token.id },
-            {
-                // have to check TTL from schema (done through Postgres)
-                // 24 hours in milliseconds
-                delay: REFRESH_TOKEN_TTL_IN_HOURS * 60 * 60 * 1000
-            }
-        )
-        console.log("[refresh] Queued remove_refresh_token job.");
-
         return {
-            access_token: signed_token,
-            refresh_token: rotated_refresh_token.token,
+            access_token: signed_token
         }
     }
 }

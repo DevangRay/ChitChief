@@ -4,6 +4,7 @@ import ResourceNotFoundError from "../../lib/custom_errors/ResourceNotFoundError
 import ConflictError from "../../lib/custom_errors/ConflictError.js";
 import ForbiddenError from "../../lib/custom_errors/ForbiddenError.js";
 import { loginSchema, logoutSchema, refreshSchema, registerUserSchema } from "./auth.schema.js";
+import { verifyToken } from "../../lib/verify-signed-token.js";
 
 type RegisterRequestBody = {
     user_name: string,
@@ -18,7 +19,6 @@ type LogoutRequestBody = {
     refresh_token: string
 }
 type RefreshRequestBody = {
-    jwt_token: string,
     refresh_token: string
 }
 
@@ -98,11 +98,19 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
     fastify.post("/refresh", { schema: refreshSchema }, async (request, reply) => {
         try {
+            const authorization = request.headers.authorization ?? '';
+            const access_token = authorization.startsWith('Bearer ')
+                ? authorization.slice(7)
+                : authorization;
+
+            console.log('[users.routes GET /me/orders] Validating access token.');
+            const payload = verifyToken(access_token);
+            console.log('[users.routes GET /me/orders] Token valid. Fetching orders.');
+
             const request_body = request.body as RefreshRequestBody;
-            const jwt_token = request_body.jwt_token;
             const refresh_token = request_body.refresh_token;
 
-            const result = await service.refresh(jwt_token, refresh_token);
+            const result = await service.refresh(payload, refresh_token);
             return reply.status(200).send(result);
         } catch (error) {
             const printable_error = (error as Error).message;

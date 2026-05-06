@@ -40,13 +40,11 @@
  *   - Error propagation
  *
  *  refresh
- *   - Valid input: returns new access + refresh tokens
- *   - jwt_token / refresh_token: missing, null, or empty string
+ *   - Valid input: returns new access_token
+ *   - payload (TokenPayload) / refresh_token: missing or null
  *   - Refresh token not found in database
  *   - Refresh token is expired
- *   - New JWT carries the same user_id and user_email as the original
- *   - Old refresh token is deleted; new refresh token is issued
- *   - Returned refresh_token differs from the consumed one (rotation)
+ *   - New JWT carries the same user_id and user_email as the original payload
  *   - Error propagation
  */
 
@@ -142,17 +140,11 @@ const makeRefreshTokenWithUser = (overrides: Partial<{
 const makeExpiredRefreshToken = () =>
     makeRefreshToken({ expires_at: new Date(Date.now() - 1_000) });
 
-/** Mint a valid JWT with the standard auth payload. */
-const makeValidJwt = (
+/** Build a TokenPayload as verifyToken would return it. */
+const makeTokenPayload = (
     userId: string = USER_ID,
     userEmail: string = EMAIL,
-    expiresInSeconds = 900,
-): string =>
-    jwt.sign(
-        { user_id: userId, user_email: userEmail },
-        process.env.SIGNING_SECRET ?? 'test-secret-for-unit-tests',
-        { expiresIn: expiresInSeconds },
-    );
+): { user_id: string; user_email: string } => ({ user_id: userId, user_email: userEmail });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock factories
@@ -728,18 +720,18 @@ describe('AuthService.refresh — behavior', () => {
 
     describe('input validation', () => {
 
-        describe('exception cases — missing jwt_token', () => {
-            it('throws ResourceNotFoundError when jwt_token is an empty string', async () => {
-                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
-
-                await expect(service.refresh('', REFRESH_TOKEN))
-                    .rejects.toBeInstanceOf(ResourceNotFoundError);
-            });
-
-            it('throws ResourceNotFoundError when jwt_token is null', async () => {
+        describe('exception cases — missing payload', () => {
+            it('throws ResourceNotFoundError when payload is null', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
                 await expect(service.refresh(null as any, REFRESH_TOKEN))
+                    .rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+
+            it('throws ResourceNotFoundError when payload is undefined', async () => {
+                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
+
+                await expect(service.refresh(undefined as any, REFRESH_TOKEN))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -748,14 +740,14 @@ describe('AuthService.refresh — behavior', () => {
             it('throws ResourceNotFoundError when refresh_token is an empty string', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
-                await expect(service.refresh(makeValidJwt(), ''))
+                await expect(service.refresh(makeTokenPayload(), ''))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
 
             it('throws ResourceNotFoundError when refresh_token is null', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
-                await expect(service.refresh(makeValidJwt(), null as any))
+                await expect(service.refresh(makeTokenPayload(), null as any))
                     .rejects.toBeInstanceOf(ResourceNotFoundError);
             });
         });
@@ -771,15 +763,15 @@ describe('AuthService.refresh — behavior', () => {
             it('succeeds when the refresh token exists and is not expired', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
-                const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
+                const result = await service.refresh(makeTokenPayload(), REFRESH_TOKEN);
 
-                expect(result).toMatchObject(EXPECTED_AUTH_RETURN_OBJECT);
+                expect(result).toMatchObject({ access_token: expect.any(String) });
             });
 
             it('throws when the refresh token does not exist in the database', async () => {
                 const { service } = buildService({ existingToken: null });
 
-                await expect(service.refresh(makeValidJwt(), REFRESH_TOKEN)).rejects.toThrow();
+                await expect(service.refresh(makeTokenPayload(), REFRESH_TOKEN)).rejects.toThrow();
             });
         });
 
@@ -790,7 +782,7 @@ describe('AuthService.refresh — behavior', () => {
                 });
                 const { service } = buildService({ existingToken: expiredTokenWithUser });
 
-                await expect(service.refresh(makeValidJwt(), REFRESH_TOKEN))
+                await expect(service.refresh(makeTokenPayload(), REFRESH_TOKEN))
                     .rejects.toBeInstanceOf(ForbiddenError);
             });
         });
@@ -806,90 +798,45 @@ describe('AuthService.refresh — behavior', () => {
             it('returns a non-empty access_token string on success', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
-                const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
+                const result = await service.refresh(makeTokenPayload(), REFRESH_TOKEN);
 
                 expect(typeof result.access_token).toBe('string');
                 expect(result.access_token.length).toBeGreaterThan(0);
             });
 
-            it('returns a non-empty refresh_token string on success', async () => {
+            it('new access token carries the same user_id as the original payload', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
-                const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
+                const result = await service.refresh(makeTokenPayload(USER_ID, EMAIL), REFRESH_TOKEN);
 
-                expect(typeof result.refresh_token).toBe('string');
-                expect(result.refresh_token.length).toBeGreaterThan(0);
+                const decoded = decodeToken(result.access_token);
+                expect(decoded.user_id).toBe(USER_ID);
             });
 
-            it('new access token carries the same user_id as the original JWT', async () => {
+            it('new access token carries the same user_email as the original payload', async () => {
                 const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
 
-                const result = await service.refresh(makeValidJwt(USER_ID, EMAIL), REFRESH_TOKEN);
+                const result = await service.refresh(makeTokenPayload(USER_ID, EMAIL), REFRESH_TOKEN);
 
-                const payload = decodeToken(result.access_token);
-                expect(payload.user_id).toBe(USER_ID);
-            });
-
-            it('new access token carries the same user_email as the original JWT', async () => {
-                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
-
-                const result = await service.refresh(makeValidJwt(USER_ID, EMAIL), REFRESH_TOKEN);
-
-                const payload = decodeToken(result.access_token);
-                expect(payload.user_email).toBe(EMAIL);
-            });
-
-            it('the returned refresh_token differs from the consumed one (token rotation)', async () => {
-                const { service } = buildService({ existingToken: makeRefreshTokenWithUser() });
-
-                const result = await service.refresh(makeValidJwt(), REFRESH_TOKEN);
-
-                // A new token must be issued; returning the same value would defeat rotation.
-                expect(result.refresh_token).not.toBe(REFRESH_TOKEN);
+                const decoded = decodeToken(result.access_token);
+                expect(decoded.user_email).toBe(EMAIL);
             });
         });
     });
 
     // =========================================================================
-    // 4. Token lifecycle — rotation
-    // =========================================================================
-
-    describe('token lifecycle — rotation', () => {
-
-        describe('equivalence cases', () => {
-            it('deletes the consumed refresh token from the database', async () => {
-                const { service, prismaMock } = buildService({ existingToken: makeRefreshTokenWithUser() });
-
-                await service.refresh(makeValidJwt(), REFRESH_TOKEN);
-
-                expect(prismaMock.refreshToken.delete).toHaveBeenCalledTimes(1);
-            });
-
-            it('creates a new refresh token in the database', async () => {
-                const { service, prismaMock } = buildService({ existingToken: makeRefreshTokenWithUser() });
-
-                await service.refresh(makeValidJwt(), REFRESH_TOKEN);
-
-                expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
-            });
-        });
-    });
-
-    // =========================================================================
-    // 5. Error propagation
+    // 4. Error propagation
     // =========================================================================
 
     describe('error propagation', () => {
 
         describe('exception cases', () => {
-            it('propagates unexpected errors thrown while deleting the old token', async () => {
-                const { service } = buildService({
-                    existingToken: makeRefreshTokenWithUser(),
-                    tokenDeleteError: new Error('DB delete timeout'),
-                });
+            it('propagates unexpected errors thrown while looking up the refresh token', async () => {
+                const { service, prismaMock } = buildService({ existingToken: makeRefreshTokenWithUser() });
+                prismaMock.refreshToken.findUnique.mockRejectedValueOnce(new Error('DB read timeout'));
 
-                await expect(service.refresh(makeValidJwt(), REFRESH_TOKEN))
-                    .rejects.toThrow('DB delete timeout');
+                await expect(service.refresh(makeTokenPayload(), REFRESH_TOKEN))
+                    .rejects.toThrow('DB read timeout');
             });
         });
     });

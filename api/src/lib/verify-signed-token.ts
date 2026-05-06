@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import ForbiddenError from "./custom_errors/ForbiddenError.js";
 
-type TokenPayload = {
+export type TokenPayload = {
     user_id: string;
     user_email: string;
 };
