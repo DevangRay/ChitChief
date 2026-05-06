@@ -17,8 +17,12 @@ import testCleanupRoutes from "./modules/test/test-cleanup.routes.js";
 export async function buildApp() {
     const app = Fastify({ logger: true });
 
+    const corsOrigin = process.env.DEPLOYED_BACKEND_URL
+        ? process.env.DEPLOYED_BACKEND_URL!
+        : `http://localhost:${process.env.PORT ?? 3000}`;
+
     await app.register(fastifyCors, {
-        origin: [`${process.env.BACKEND_SERVER_HOST}:${process.env.BACKEND_SERVER_PORT}`, process.env.DEPLOYED_BACKEND_URL!, process.env.DEPLOYED_HEALTHCHECK_URL!],
+        origin: [corsOrigin, process.env.DEPLOYED_HEALTHCHECK_URL!], // Allow both backend and healthcheck URLs 
         methods: ['GET', 'POST'],
         credentials: true
     })

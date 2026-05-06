@@ -3,8 +3,6 @@ import { buildApp } from "./app.js";
 
 const REQUIRED_ENV_VARS = [
     'NODE_ENV',
-    'BACKEND_SERVER_HOST',
-    'BACKEND_SERVER_PORT',
     'DATABASE_URL',
     'REDIS_URL',
     'SIGNING_SECRET',
@@ -26,7 +24,9 @@ async function start() {
     let app;
     try {
         app = await buildApp();
-        await app.listen({ port: Number(process.env.BACKEND_SERVER_PORT), host: `${process.env.BACKEND_SERVER_HOST}` });
+        const port = Number(process.env.PORT ?? 3000);
+        const host = '0.0.0.0'; // Listen on all interfaces for production compatibility
+        await app.listen({ port, host });
     } catch (error) {
         console.error("[server] Startup error:", error);
         app?.log?.error(error);
