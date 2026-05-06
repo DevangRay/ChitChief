@@ -18,7 +18,7 @@ export async function buildApp() {
     const app = Fastify({ logger: true });
 
     await app.register(fastifyCors, {
-        origin: [`http://${process.env.BACKEND_SERVER_HOST}:${process.env.BACKEND_SERVER_PORT}`, process.env.DEPLOYED_BACKEND_URL!, process.env.DEPLOYED_HEALTHCHECK_URL!],
+        origin: [`${process.env.BACKEND_SERVER_HOST}:${process.env.BACKEND_SERVER_PORT}`, process.env.DEPLOYED_BACKEND_URL!, process.env.DEPLOYED_HEALTHCHECK_URL!],
         methods: ['GET', 'POST'],
         credentials: true
     })
