@@ -7,12 +7,12 @@ import 'dotenv/config';
 import { getDateForLogs } from './lib/date-formatter.js';
 import { sendPostPaymentEmail } from './lib/send-email.js';
 
-const connection = new Redis(
-    process.env.REDIS_URL!,
-    {
-        maxRetriesPerRequest: null, // Required for BullMQ
-    });
-const prisma = createPrismaClient(process.env.DATABASE_URL!);
+const connection = new Redis(process.env.REDIS_URL!, {
+    maxRetriesPerRequest: null, // Required for BullMQ
+    enableReadyCheck: false,
+});
+// as a long-lived process, benefits using direct connection
+const prisma = createPrismaClient(process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL!);
 
 const worker = new Worker(
     'reservations',
