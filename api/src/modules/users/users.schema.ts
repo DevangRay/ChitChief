@@ -20,7 +20,6 @@ export const getMeSchema: FastifySchema = {
                 email: { type: "string" },
                 username: { type: "string" },
                 created_at: { type: "string", format: "date-time" },
-                user_uuid: { type: "string" },
                 refresh_token_expires_at: { type: ["string", "null"], format: "date-time" }
             }
         },

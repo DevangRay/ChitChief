@@ -15,6 +15,8 @@ export function verifyToken(access_token: string): TokenPayload {
         if (!payload) {
             throw new ForbiddenError("Invalid access token.");
         }
+        
+        console.log('[verifyToken] Token payload: ', payload);
         return payload;
     } catch (error) {
         if (error instanceof ForbiddenError) throw error;

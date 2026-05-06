@@ -5,17 +5,12 @@ import { PaymentMethod } from "../../lib/payment-method.js";
 export const reserveTicketSchema: FastifySchema = {
     body: {
         type: "object",
-        required: ["seat_ids", "user_uuid"],
+        required: ["seat_ids"],
         properties: {
             seat_ids: {
                 type: "array", items: {
                     type: "string"
                 }
-            },
-            user_uuid: {
-                type: "string",
-                format: "uuid",
-                description: "User UUID."
             }
         }
     },
@@ -82,16 +77,11 @@ export const getIdempotencyKeyForDemo: FastifySchema = {
 export const createPaymentIntentSchema: FastifySchema = {
     body: {
         type: "object",
-        required: ["reservation_token", "user_uuid", "idempotency_key", "payment_method"],
+        required: ["reservation_token", "idempotency_key", "payment_method"],
         properties: {
             reservation_token: {
                 type: "string",
                 description: "JWT Signed Reservation token from [POST] /tickets/reserve endpoint"
-            },
-            user_uuid: {
-                type: "string",
-                format: "uuid",
-                description: "User UUID."
             },
             idempotency_key: {
                 type: "string",

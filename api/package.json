@@ -22,8 +22,8 @@
     "test:performance:concurrent": "node src/test/run-performance.mjs concurrent_reservation",
     "test:performance:e2e": "node src/test/run-performance.mjs e2e_load",
     "test:performance:read": "node src/test/run-performance.mjs read_load",
-    "dev": "tsx watch src/server.ts",
-    "dev:worker": "tsx watch src/worker.ts",
+    "dev": "tsx src/server.ts",
+    "dev:worker": "tsx src/worker.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "tsx src/seed.ts"

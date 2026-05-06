@@ -5,7 +5,6 @@ type UserProfile = {
     email: string;
     username: string;
     created_at: Date;
-    user_uuid: string;
     refresh_token_expires_at: Date | null;
 };
 
@@ -48,7 +47,6 @@ export class UserService {
             email: user.email,
             username: user.username,
             created_at: user.created_at,
-            user_uuid: user.id,
             refresh_token_expires_at: user.refresh_token[0]?.expires_at ?? null,
         };
     }

@@ -38,7 +38,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
             const request_body = request.body as ReserveTicketRequestBody;
             const seat_ids = request_body.seat_ids;
-            const user_uuid = request_body.user_uuid;
+            const user_uuid = payload.user_id; // override user_uuid from body with user_id from token to prevent malicious users from reserving seats under other users' UUIDs
 
             // add retry jitter -> catch case where multiple requests come in at same time for same seats, and all get through redis lock check before locks are set
             let attempt_error: Error | undefined;
@@ -113,7 +113,7 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
 
             const request_body = request.body as PaymentIntentRequestBody;
             const reservation_token = request_body.reservation_token;
-            const user_uuid = request_body.user_uuid;
+            const user_uuid = payload.user_id; // override user_uuid from body with user_id from token to prevent malicious users from creating payment intents under other users' UUIDs
             const idempotency_key = request_body.idempotency_key;
             const payment_method = request_body.payment_method;
 
