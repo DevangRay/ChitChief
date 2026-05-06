@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createPrismaClient } from "./lib/prisma-factory.js";
 
 async function main() {
