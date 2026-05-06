@@ -141,10 +141,19 @@ const buildProfileService = ({
 };
 
 const buildOrdersService = ({
+    userExists = true,
     orders = [makeOrder()] as any[],
     dbError = undefined as Error | undefined,
+    refreshTokenExpiresAt = new Date(Date.now() + 60 * 1000) as Date | null
 } = {}) => {
     const prismaMock = {
+        user: {
+            findUnique: dbError
+                ? vi.fn().mockRejectedValue(dbError)
+                : vi.fn().mockResolvedValue(
+                    userExists ? makeUser(refreshTokenExpiresAt) : null,
+                ),
+        },
         order: {
             findMany: dbError
                 ? vi.fn().mockRejectedValue(dbError)
