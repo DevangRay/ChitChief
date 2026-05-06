@@ -96,6 +96,16 @@ describe('Users Routes E2E', () => {
             expect(res.body).toHaveProperty('refresh_token_expires_at')
         })
 
+        it('Boundary Test: returns 404 when the user in the access token does not exist in the database', async () => {
+            const token = makeAccessToken()
+
+            const res = await supertest(app.server)
+                .get('/users/me')
+                .set('Authorization', `Bearer ${token}`)
+
+            expect(res.status).toBe(404)
+        })
+
         it('Boundary Test: returns 404 when the user has no active refresh token', async () => {
             await createUser()
             const token = makeAccessToken()

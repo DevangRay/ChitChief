@@ -433,14 +433,6 @@ describe('UserService.getOrders — behavior', () => {
                 const [order] = await service.getOrders(USER_ID);
                 expect(order.seat_names).toHaveLength(1);
             });
-
-            it('returns an empty seat_names array for an order with no seats', async () => {
-                const { service } = buildOrdersService({
-                    orders: [makeOrder({ order_seats: [] })],
-                });
-                const [order] = await service.getOrders(USER_ID);
-                expect(order.seat_names).toEqual([]);
-            });
         });
     });
 
@@ -472,12 +464,12 @@ describe('UserService.getOrders — behavior', () => {
         });
 
         describe('boundary cases', () => {
-            it('returns 0 as total_price for an order with no seats', async () => {
+            it("throws error the order has no seats", async () => {
                 const { service } = buildOrdersService({
                     orders: [makeOrder({ order_seats: [] })],
                 });
-                const [order] = await service.getOrders(USER_ID);
-                expect(order.total_price).toBe(0);
+
+                await expect(service.getOrders(USER_ID)).rejects.toThrow();
             });
         });
     });

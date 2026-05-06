@@ -72,10 +72,14 @@ export class UserService {
             },
             orderBy: { created_at: 'desc' }
         });
-
         console.log('[getOrders] Found', orders.length, 'orders.');
 
-        return orders.map(order => {
+        const formatted_orders = orders.map((order) => {
+            if (order.order_seats.length === 0) {
+                console.warn(`[getOrders] Order ${order.id} has no associated seats.`);
+                throw new Error("Order ${order.id} has no associated seats.")
+            }
+
             const seat_names = order.order_seats.map(os => `${os.seat.row}${os.seat.number}`);
             const total_price = order.order_seats.reduce((sum, os) => sum + os.price_at_purchase, 0);
             const event = order.order_seats[0]?.seat.event;
@@ -90,6 +94,8 @@ export class UserService {
                 seat_names,
                 total_price,
             };
-        });
+        })
+
+        return formatted_orders;
     }
 }
