@@ -36,6 +36,27 @@
 * Schema can be seen at:
     * [prisma.schema](api/prisma/schema.prisma) located at `/api/prisma/schema.prisma`
 
+## Load Testing Results
+Testing the core-concurrency requierment. Exactly 1 user succeeds when many race for the same seat. This was verified under load.
+### Test: 400 Concurrent Reservation Requests from 200 Users
+#### Command used:
+```
+npm run test:performance:concurrent
+```
+or 
+```bash
+node src/test/run-performance.mjs concurrent_reservation
+```
+#### Results
+* `conflict_reservations` count is 399
+* `successful_reservations` count is 1
+
+![See the full results](/resources/k6_concurrency_test.png)
+#### Discussion
+50 virtual users simultaneously hit the same seat reservation endpoint.
+Redis's atomic Lua script ensures exactly one lock is acquired — the 
+remaining 399 receive a 409 conflict response, directly proving the solution properly supports concurrency.
+
 ## Tech Stack breakdown
 * DB
     * PostgreSQL
