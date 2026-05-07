@@ -28,7 +28,7 @@ export class UserService {
             throw new ResourceNotFoundError("Invalid user_id provided.")
         }
         console.log('[getProfile] Parameters verified');
-        
+
         console.log('[getProfile] Retrieving user');
         const user = await this.prisma.user.findUnique({
             where: { id: user_id },
@@ -57,6 +57,16 @@ export class UserService {
             throw new ResourceNotFoundError("Invalid user_id provided.")
         }
         console.log('[getOrders] Parameters verified');
+
+        console.log('[getProfile] Retrieving user');
+        const user = await this.prisma.user.findUnique({
+            where: { id: user_id },
+        });
+
+        if (!user) {
+            throw new ResourceNotFoundError("User not found.");
+        }
+        console.log('[getProfile] Found user:', user.id);
 
         console.log('[getOrders] Retrieving order');
         const orders = await this.prisma.order.findMany({

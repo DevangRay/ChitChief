@@ -326,6 +326,24 @@ describe('AuthService.registerUser — behavior', () => {
                 await expect(service.registerUser(USER_NAME, EMAIL, PASSWORD))
                     .rejects.toBeInstanceOf(ConflictError);
             });
+
+            it('Boundary Test: throws ConflictError when a user with the same username already exists (different email)', async () => {
+                // findUnique uses compound AND — the partial match slips past the pre-check.
+                // user.create then hits the DB unique constraint (P2002) which must be caught.
+                const p2002 = Object.assign(new Error('Unique constraint failed on username'), { code: 'P2002' });
+                const { service } = buildService({ existingUser: null, userCreateError: p2002 });
+
+                await expect(service.registerUser(USER_NAME, 'different@example.com', PASSWORD))
+                    .rejects.toBeInstanceOf(ConflictError);
+            });
+
+            it('Boundary Test: throws ConflictError when a user with the same email already exists (different username)', async () => {
+                const p2002 = Object.assign(new Error('Unique constraint failed on email'), { code: 'P2002' });
+                const { service } = buildService({ existingUser: null, userCreateError: p2002 });
+
+                await expect(service.registerUser('differentuser', EMAIL, PASSWORD))
+                    .rejects.toBeInstanceOf(ConflictError);
+            });
         });
     });
 

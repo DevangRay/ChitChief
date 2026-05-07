@@ -259,9 +259,21 @@ describe('UserService.getProfile — behavior', () => {
                 expect(result.refresh_token_expires_at).toEqual(expiresAt);
             });
 
-            it('throws error for refresh_token_expires_at when the user has no active session', async () => {
+            it('throws ResourceNotFoundError when the user has no active refresh token', async () => {
                 const { service } = buildProfileService({ refreshTokenExpiresAt: null });
-                await expect(service.getProfile(USER_ID)).rejects.toThrow();
+                await expect(service.getProfile(USER_ID)).rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+        });
+
+        describe('boundary cases', () => {
+            it('returns the profile with a past refresh_token_expires_at when the session is expired', async () => {
+                // The service does not check expiry in getProfile — it returns whatever expires_at
+                // is stored. The caller (e.g. the frontend) is responsible for detecting staleness.
+                const expiredAt = new Date(Date.now() - 60 * 1000);
+                const { service } = buildProfileService({ refreshTokenExpiresAt: expiredAt });
+                const result = await service.getProfile(USER_ID);
+                expect(result.refresh_token_expires_at).toBeInstanceOf(Date);
+                expect(result.refresh_token_expires_at!.getTime()).toBeLessThan(Date.now());
             });
         });
     });
@@ -302,7 +314,21 @@ describe('UserService.getOrders — behavior', () => {
     });
 
     // =========================================================================
-    // 2. Orders retrieval
+    // 2. User lookup
+    // =========================================================================
+
+    describe('user lookup', () => {
+
+        describe('equivalence cases', () => {
+            it('throws ResourceNotFoundError when the user does not exist in the database', async () => {
+                const { service } = buildOrdersService({ userExists: false });
+                await expect(service.getOrders(USER_ID)).rejects.toBeInstanceOf(ResourceNotFoundError);
+            });
+        });
+    });
+
+    // =========================================================================
+    // 3. Orders retrieval
     // =========================================================================
 
     describe('orders retrieval', () => {
@@ -341,7 +367,7 @@ describe('UserService.getOrders — behavior', () => {
     });
 
     // =========================================================================
-    // 3. Return value contract — shape
+    // 4. Return value contract — shape
     // =========================================================================
 
     describe('return value contract — shape', () => {
@@ -400,7 +426,7 @@ describe('UserService.getOrders — behavior', () => {
     });
 
     // =========================================================================
-    // 4. Seat names
+    // 5. Seat names
     // =========================================================================
 
     describe('seat names', () => {
@@ -437,7 +463,7 @@ describe('UserService.getOrders — behavior', () => {
     });
 
     // =========================================================================
-    // 5. Total price
+    // 6. Total price
     // =========================================================================
 
     describe('total price', () => {

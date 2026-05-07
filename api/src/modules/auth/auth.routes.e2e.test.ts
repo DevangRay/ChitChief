@@ -72,6 +72,26 @@ describe('Auth Routes E2E', () => {
             expect(res.status).toBe(409)
         })
 
+        it('Boundary Test: returns 409 when registering with the same username but a different email', async () => {
+            await registerUser(app)
+
+            const res = await supertest(app.server)
+                .post('/auth/register')
+                .send({ user_name: TEST_USER_NAME, email: 'other@example.com', password: TEST_USER_PASSWORD })
+
+            expect(res.status).toBe(409)
+        })
+
+        it('Boundary Test: returns 409 when registering with the same email but a different username', async () => {
+            await registerUser(app)
+
+            const res = await supertest(app.server)
+                .post('/auth/register')
+                .send({ user_name: 'otheruser', email: TEST_USER_EMAIL, password: TEST_USER_PASSWORD })
+
+            expect(res.status).toBe(409)
+        })
+
         it('Exception Test: returns 400 when user_name is missing from the body', async () => {
             const res = await supertest(app.server)
                 .post('/auth/register')

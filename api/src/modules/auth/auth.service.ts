@@ -60,13 +60,22 @@ export class AuthService {
 
         // save user-details
         console.log("[registerUser] Creating user.")
-        const user_result = await this.prisma.user.create({
-            data: {
-                email: email,
-                username: user_name,
-                password_hash: hashed_password
+        let user_result;
+        try {
+            user_result = await this.prisma.user.create({
+                data: {
+                    email: email,
+                    username: user_name,
+                    password_hash: hashed_password
+                }
+            })
+        } catch (error) {
+            // P2002: unique constraint violation — username or email already taken
+            if ((error as any)?.code === 'P2002') {
+                throw new ConflictError("This User and Email Address are not Unique");
             }
-        })
+            throw error;
+        }
         console.log("[registerUser] Created user:", user_result);
 
         // return access/refresh token

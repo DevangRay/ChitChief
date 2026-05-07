@@ -79,7 +79,12 @@ export class TicketService {
     async reserveSeats(seats: string[], user_uuid: string): Promise<ReservationObject> {
         // 1. Validate seats and user
         console.log("[reserveSeats] Validating seats and user parameters.");
-        if (!seats || seats.length === 0 || seats.length > 10) {
+        const available_seat_count = await this.prisma.seat.count({
+            where: {
+                seat_status: SeatStatus.AVAILABLE
+            }
+        });
+        if (!seats || seats.length === 0 || seats.length > available_seat_count) {
             console.log("[reserveSeats] Invalid number of seats provided for reservation.");
             throw new ResourceNotFoundError("Invalid number of seats provided.")
         }

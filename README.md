@@ -84,6 +84,10 @@
         * Frontend integration with Stripe.js
         * Mobile app with Stripe SDK
 * With the free-tier on Neon, the deployed PostgreSQL DB scales down in periods of inactivity. This results in some latency for the first query, but once the instance is cold-started subsequent queries will have normal performance.
+* Currently, there is no way to invalidate a user's access token. The refresh token is deleted so the users' current session can not be extended. 
+    * Future implementation to add a list of invalidated access tokens in redis that is stored before they are naturally expired.
+* Currently, the tickets service gets the max available seat count from Prisma. This is not fully concurrently-safe, but with the Redis locks and BullMQ worker, it would be impossible for a user to reserve an unavailable seat anyway.
+    * Future implementation to track seat count with Redis.
 
 
 ## Glossary
