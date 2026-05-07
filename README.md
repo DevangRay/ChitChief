@@ -44,7 +44,7 @@ Testing the core-concurrency requierment. Exactly 1 user succeeds when many race
 npm run test:performance:concurrent
 ```
 or 
-```bash
+```
 node src/test/run-performance.mjs concurrent_reservation
 ```
 #### Results
@@ -56,6 +56,23 @@ node src/test/run-performance.mjs concurrent_reservation
 50 virtual users simultaneously hit the same seat reservation endpoint.
 Redis's atomic Lua script ensures exactly one lock is acquired — the 
 remaining 399 receive a 409 conflict response, directly proving the solution properly supports concurrency.
+
+---------------
+### Test: End-to-end Stress Test
+#### Command used:
+```
+npm run test:performance:e2e
+```
+or 
+```
+node src/test/run-performance.mjs e2e_load
+```
+#### Results
+* `checks_total` count is 26071
+* `checks_succeeded` percentage is 100.00%
+* `checks_failed` percentage is 0.00%
+* average `iteration_duration` is 50.01 seconds
+![See the full results](/resources/k6_e2e_stress_test.png)
 
 ## Tech Stack breakdown
 * DB
