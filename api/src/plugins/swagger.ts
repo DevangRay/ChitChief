@@ -16,7 +16,7 @@ async function swaggerPlugin(fastify: FastifyInstance) {
             servers: [
                 {
                     url: process.env.DEPLOYED_BACKEND_URL ? `https://${process.env.DEPLOYED_BACKEND_URL}` : 'http://localhost:3000',
-                    description: `${process.env.DEPLOYED_BACKEND_URL ? 'Deployed backend server' : 'Local development server'}`,
+                    description: process.env.DEPLOYED_BACKEND_URL ? 'Deployed backend server' : 'Local development server',
                 },
             ],
             tags: [
