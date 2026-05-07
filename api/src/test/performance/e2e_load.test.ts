@@ -207,8 +207,8 @@ export default function (data: {
 
         const res = http.post(
             `${BASE_URL}/tickets/reserve`,
-            JSON.stringify({ seat_ids: my_seat_ids, user_uuid }),
-            { ...REQUEST_PARAMS, headers: { "Content-Type": "application/json" } }
+            JSON.stringify({ seat_ids: my_seat_ids }),
+            { ...REQUEST_PARAMS, headers: { "Content-Type": "application/json", Authorization: `Bearer ${access_token}` } }
         );
 
         check(res, {

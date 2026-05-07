@@ -103,7 +103,7 @@ export function teardown(data: { seat_ids: string[]; user_uuid: string; access_t
 export default function (data: { seat_ids: string[]; user_uuid: string, access_token: string }) {
     const res = http.post(
         `${BASE_URL}/tickets/reserve`,
-        JSON.stringify({ seat_ids: data.seat_ids, user_uuid: data.user_uuid }),
+        JSON.stringify({ seat_ids: data.seat_ids }),
         { headers: { "Content-Type": "application/json", "Authorization": `Bearer ${data.access_token}` } }
     );
 
