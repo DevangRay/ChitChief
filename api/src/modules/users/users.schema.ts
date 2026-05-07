@@ -2,13 +2,17 @@ import { type FastifySchema } from "fastify";
 
 // GET /me
 export const getMeSchema: FastifySchema = {
+    tags: ["Users"],
+    description: "Get the authenticated user's profile information.",
+    security: [{ bearerAuth: [] }],
     headers: {
         type: "object",
         required: ["authorization"],
         properties: {
             authorization: {
                 type: "string",
-                description: "Bearer JWT access token — 'Bearer <token>'"
+                description: "Bearer JWT access token — 'Bearer <token>'",
+                examples: ["Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhYmMxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"]
             }
         }
     },
@@ -43,13 +47,17 @@ export const getMeSchema: FastifySchema = {
 
 // GET /me/orders
 export const getMeOrdersSchema: FastifySchema = {
+    tags: ["Users"],
+    description: "Get all orders associated with the authenticated user, including event details, seat names, total price, and order status.",
+    security: [{ bearerAuth: [] }],
     headers: {
         type: "object",
         required: ["authorization"],
         properties: {
             authorization: {
                 type: "string",
-                description: "Bearer JWT access token — 'Bearer <token>'"
+                description: "Bearer JWT access token — 'Bearer <token>'",
+                examples: ["Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhYmMxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"]
             }
         }
     },

@@ -13,6 +13,19 @@ async function swaggerPlugin(fastify: FastifyInstance) {
                 description: 'ChitChief ticketing platform API',
                 version: '1.0.0',
             },
+            servers: [
+                {
+                    url: `${process.env.DEPLOYED_BACKEND_URL ?? 'http://localhost:3000'}`,
+                    description: `${process.env.DEPLOYED_BACKEND_URL ? 'Deployed backend server' : 'Local development server'}`,
+                },
+            ],
+            tags: [
+                { name: 'Auth', description: 'User registration, login, logout, and JWT token refresh' },
+                { name: 'Users', description: 'Authenticated user profile and order history' },
+                { name: 'Events', description: 'Browse available events and their seating inventory' },
+                { name: 'Tickets', description: 'Reserve seats with distributed locking and process payments via Stripe' },
+                { name: 'Webhooks', description: 'Stripe webhook callbacks for async payment confirmation' },
+            ],
             components: {
                 securitySchemes: {
                     bearerAuth: {

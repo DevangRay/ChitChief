@@ -1,22 +1,27 @@
 import type { FastifySchema } from "fastify";
 
 export const registerUserSchema: FastifySchema = {
+    tags: ["Auth"],
+    description: "Create a new user account. Returns a JWT access token + refresh token for re-authentication.",
     body: {
         type: "object",
         required: ["user_name", "email", "password"],
         properties: {
             user_name: {
                 type: "string",
-                description: "String username of new user"
+                description: "String username of new user",
+                examples: ["john_doe"]
             },
             email: {
                 type: "string",
                 format: "email",
-                description: "String email of new user"
+                description: "String email of new user",
+                examples: ["john.doe@example.com"]
             },
             password: {
                 type: "string",
-                description: "Plain-text password of new user. In real product, the password would only travel hashed."
+                description: "Plain-text password of new user. In real production, the password would only travel hashed.",
+                examples: ["SecurePass123!"]
             }
         }
     },
@@ -54,17 +59,21 @@ export const registerUserSchema: FastifySchema = {
 }
 
 export const loginSchema: FastifySchema = {
+    tags: ["Auth"],
+    description: "Login to an existing user account. Returns a JWT access token + refresh token for re-authentication.",
     body: {
         type: "object",
         required: ["user_name", "password"],
         properties: {
             user_name: {
                 type: "string",
-                description: "String username of new user"
+                description: "String username of new user",
+                examples: ["john_doe"]
             },
             password: {
                 type: "string",
-                description: "Plain-text password of new user. In real product, the password would only travel hashed."
+                description: "Plain-text password of new user. In real production, the password would only travel hashed.",
+                examples: ["SecurePass123!"]
             }
         }
     },
@@ -102,13 +111,16 @@ export const loginSchema: FastifySchema = {
 }
 
 export const logoutSchema: FastifySchema = {
+    tags: ["Auth"],
+    description: "Log-out of an authenticated session.",
     body: {
         type: "object",
         required: ["refresh_token"],
         properties: {
             refresh_token: {
                 type: "string",
-                description: "Refresh Token previously provided."
+                description: "Refresh Token previously provided.",
+                examples: ["550e8400-e29b-41d4-a716-446655440000"]
             }
         }
     },
@@ -142,13 +154,17 @@ export const logoutSchema: FastifySchema = {
 }
 
 export const refreshSchema: FastifySchema = {
+    tags: ["Auth"],
+    description: "If the provided refresh token is valid, a new JWT access token is issued.",
+    security: [{ bearerAuth: [] }],
     headers: {
         type: "object",
         required: ["authorization"],
         properties: {
             authorization: {
                 type: "string",
-                description: "Bearer JWT access token — 'Bearer <token>'"
+                description: "Bearer JWT access token — 'Bearer <token>'",
+                examples: ["Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhYmMxMjMifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"]
             }
         }
     },
@@ -158,7 +174,8 @@ export const refreshSchema: FastifySchema = {
         properties: {
             refresh_token: {
                 type: "string",
-                description: "Previously provided refresh token."
+                description: "Previously provided refresh token.",
+                examples: ["550e8400-e29b-41d4-a716-446655440000"]
             }
         }
     },
