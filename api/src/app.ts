@@ -35,7 +35,16 @@ export async function buildApp() {
             .split(',')
             .map(ip => ip.trim())
     })
-    await app.register(fastifyHelmet);
+    await app.register(fastifyHelmet, {
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'", "'unsafe-inline'"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                imgSrc: ["'self'", "data:", "validator.swagger.io"],
+            },
+        },
+    });
 
     await app.register(prismaPlugin);
     await app.register(redisPlugin);
