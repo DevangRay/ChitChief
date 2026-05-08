@@ -8,10 +8,11 @@ import swaggerPlugin from './plugins/swagger.js';
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js'
 import authRoutes from "./modules/auth/auth.routes.js"
+import usersRoutes from "./modules/users/users.routes.js";
 import eventsRoutes from "./modules/events/events.routes.js";
 import ticketsRoutes from "./modules/tickets/tickets.routes.js";
 import webhookRoutes from "./modules/webhooks/webhooks.routes.js";
-import usersRoutes from "./modules/users/users.routes.js";
+import healthRoutes from "./modules/health/health.routes.js";
 import testCleanupRoutes from "./modules/test/test-cleanup.routes.js";
 
 export async function buildApp() {
@@ -55,13 +56,11 @@ export async function buildApp() {
     await app.register(eventsRoutes, { prefix: "/events" });
     await app.register(ticketsRoutes, { prefix: "/tickets" });
     await app.register(webhookRoutes, { prefix: "/webhooks" })
+    await app.register(healthRoutes, { prefix: "/health" });
 
     if (process.env.NODE_ENV !== 'production') {
         await app.register(testCleanupRoutes, { prefix: "/test" });
     }
-
-    // simple help check
-    app.get('/health', async () => ({ status: 'ok' }));
 
     return app
 }

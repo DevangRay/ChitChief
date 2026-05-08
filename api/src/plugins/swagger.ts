@@ -25,6 +25,7 @@ async function swaggerPlugin(fastify: FastifyInstance) {
                 { name: 'Events', description: 'Browse available events and their seating inventory' },
                 { name: 'Tickets', description: 'Reserve seats with distributed locking and process payments via Stripe' },
                 { name: 'Webhooks', description: 'Stripe webhook callbacks for async payment confirmation' },
+                { name: 'Health', description: 'Health check endpoints' },
             ],
             components: {
                 securitySchemes: {
