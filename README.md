@@ -21,9 +21,9 @@
 * Schema can be seen at:
     * [prisma.schema](api/prisma/schema.prisma) located at `/api/prisma/schema.prisma`
 
-## Load Testing Results
+## Testing Results
 Testing the core-concurrency requierment. Exactly 1 user succeeds when many race for the same seat. This was verified under load.
-### Test: 400 Concurrent Reservation Requests from 200 Users
+### Load Test: 400 Concurrent Reservation Requests from 200 Users
 #### Discussion
 50 virtual users simultaneously hit the same seat reservation endpoint.
 Redis's atomic Lua script ensures exactly one lock is acquired — the 
@@ -43,7 +43,7 @@ node src/test/run-performance.mjs concurrent_reservation
 ![See the full results](/resources/k6_concurrency_test.png)
 
 ---------------
-### Test: End-to-end Stress Test
+### Load Test: End-to-end Stress Test
 #### Discussion
 This test encapsulates how the system would actually perform at scale. The test creates virtual users, ramping up to 500 concurrent users at its peak, with each user simulating realistic flows by hitting several endpoints (registering users, seeing available events, checking out seats, reserving tickets, etc.). `k6` tracks key metrics like how many requests failed and how long these requests took, creating a single view that can actually verify if this system can actually walk the walk or if its all just talk.
 
@@ -61,6 +61,29 @@ node src/test/run-performance.mjs e2e_load
 * `checks_failed` percentage is 0.00%
 * average `iteration_duration` is 50.01 seconds
 ![See the full results](/resources/k6_e2e_stress_test.png)
+
+### Unit Tests
+#### Total tests: 227
+#### Results
+* 227/227 tests passed
+![Unit test results](/resources/unit_test_output.png)
+
+### End-to-end Tests
+#### Users service (22 tests)
+* 22/22 tests passed
+![Users E2E test results](/resources/users_e2e_tests.png)
+#### Auth service (28 tests)
+* 28/28 tests passed
+![Auth E2E test results](/resources/auth_e2e_tests.png)
+#### Events service (21 tests)
+* 21/21 tests passed
+![Events E2E test results](/resources/events_e2e_tests.png)
+#### Tickets service (30 tests)
+* 30/30 tests passed
+![Tickets E2E test results](/resources/tickets_e2e_tests.png)
+#### Webhooks service (6 tests)
+* 6/6 tests passed
+![Webhooks E2E test results](/resources/webhooks_e2e_tests.png)
 
 ## Tech Stack breakdown
 * DB
@@ -88,7 +111,7 @@ node src/test/run-performance.mjs e2e_load
     * Load testing
         * `k6`
 
-## Test the API locally yourself!
+## Try the API locally!
 #### Using Docker
 * Use example .env files:
     * Located at:
@@ -127,8 +150,6 @@ node src/test/run-performance.mjs e2e_load
 * With the free-tier on Neon, the deployed PostgreSQL DB scales down in periods of inactivity. This results in some latency for the first query, but once the instance is cold-started subsequent queries will have normal performance.
 * Currently, there is no way to invalidate a user's access token. The refresh token is deleted so the users' current session can not be extended. 
     * Future implementation to add a list of invalidated access tokens in redis that is stored before they are naturally expired.
-* Currently, the tickets service gets the max available seat count from Prisma. This is not fully concurrently-safe, but with the Redis locks and BullMQ worker, it would be impossible for a user to reserve an unavailable seat anyway.
-    * Future implementation to track seat count with Redis.
 
 
 ## Reference
