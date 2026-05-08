@@ -202,15 +202,16 @@ describe('Tickets Routes E2E', () => {
             expect(res.status).toBe(400)
         })
 
-        // ── Access token validation (403) ────────────────────────────────────────
-        it('Exception Test: returns 403 when Authorization header is missing', async () => {
+        // ── Access token validation (400/403) ────────────────────────────────────────
+        it('Exception Test: returns 400 when Authorization header is missing', async () => {
+            // caught by prisma schema so it fails early with 400 instead of 403 from the route handler
             const { seat } = await createSeatFixture(prisma)
 
             const res = await supertest(app.server)
                 .post('/tickets/reserve')
                 .send({ seat_ids: [seat.id], user_uuid: TEST_USER_UUID })
 
-            expect(res.status).toBe(403)
+            expect(res.status).toBe(400)
         })
 
         it('Exception Test: returns 403 when access token is signed with the wrong secret', async () => {
@@ -320,8 +321,9 @@ describe('Tickets Routes E2E', () => {
             expect(res.status).toBe(400)
         })
 
-        // ── Access token validation (403) ────────────────────────────────────────
-        it('Exception Test: returns 403 when Authorization header is missing', async () => {
+        // ── Access token validation (400/403) ────────────────────────────────────────
+        it('Exception Test: returns 400 when Authorization header is missing', async () => {
+            // caught by prisma schema so it fails early with 400 instead of 403 from the route handler
             const res = await supertest(app.server)
                 .post('/tickets/payment/intent')
                 .send({
@@ -331,7 +333,7 @@ describe('Tickets Routes E2E', () => {
                     payment_method: 'SUCCESS_VISA'
                 })
 
-            expect(res.status).toBe(403)
+            expect(res.status).toBe(400)
         })
 
         it('Exception Test: returns 403 when access token is signed with the wrong secret', async () => {
