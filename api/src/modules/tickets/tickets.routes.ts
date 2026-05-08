@@ -83,7 +83,12 @@ export default async function routes(fastify: FastifyInstance, options: Object) 
             console.log('[tickets.routes POST /tickets/reserve]: Caught error:', printable_error);
             fastify.log.error(error, '[POST /tickets/reserve] Failed to reserve seats');
 
-            return reply.status(500).send({ message: 'Internal server error.' });
+            if (error instanceof ForbiddenError) {
+                console.log("[tickets.routes /payment/intent]: Caught 403 Error. Returning.")
+                return reply.status(403).send({ message: error.message });
+            } else {
+                return reply.status(500).send({ message: 'Internal server error.' });
+            }
         }
     });
 

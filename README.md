@@ -60,30 +60,46 @@ node src/test/run-performance.mjs e2e_load
 * `checks_succeeded` percentage is 100.00%
 * `checks_failed` percentage is 0.00%
 * average `iteration_duration` is 50.01 seconds
+
 ![See the full results](/resources/k6_e2e_stress_test.png)
 
 ### Unit Tests
-#### Total tests: 227
+#### Total tests: 226
 #### Results
-* 227/227 tests passed
+* 226/226 tests passed
+
 ![Unit test results](/resources/unit_test_output.png)
 
 ### End-to-end Tests
 #### Users service (22 tests)
 * 22/22 tests passed
+
 ![Users E2E test results](/resources/users_e2e_tests.png)
+
+
 #### Auth service (28 tests)
 * 28/28 tests passed
+
 ![Auth E2E test results](/resources/auth_e2e_tests.png)
+
+
 #### Events service (21 tests)
 * 21/21 tests passed
+
 ![Events E2E test results](/resources/events_e2e_tests.png)
+
+
 #### Tickets service (30 tests)
 * 30/30 tests passed
+
 ![Tickets E2E test results](/resources/tickets_e2e_tests.png)
+
+
 #### Webhooks service (6 tests)
 * 6/6 tests passed
+
 ![Webhooks E2E test results](/resources/webhooks_e2e_tests.png)
+
 
 ## Tech Stack breakdown
 * DB

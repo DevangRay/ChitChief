@@ -254,19 +254,13 @@ const makeRedisMock = (
     };
 };
 
-/** Create a Prisma mock whose findMany returns `availableSeats`.
- *  `seatCount` overrides the value returned by `seat.count`; defaults to availableSeats.length. */
-const makePrismaMock = (availableSeats: object[] = [], seatCount?: number) => ({
+const makePrismaMock = (availableSeats: object[] = []) => ({
     seat: {
-        count: vi.fn().mockResolvedValue(seatCount ?? availableSeats.length),
         findMany: vi.fn().mockResolvedValue(availableSeats),
         updateMany: vi.fn().mockResolvedValue({ count: availableSeats.length }),
     },
 });
 
-/** Build the full service under test with the given world state.
- *  `availableSeatCount` overrides what `prisma.seat.count` returns; useful for testing
- *  the dynamic upper-bound check without inflating the available-seat list. */
 const buildService = ({
     seatIds = makeSeatIds(2),
     allAvailable = true,
@@ -274,16 +268,13 @@ const buildService = ({
     lockResult = 'OK' as 'OK' | string[] | Error,
     dbError = undefined as Error | undefined,
     queueError = undefined as Error | undefined,
-    availableSeatCount = undefined as number | undefined,
 } = {}) => {
     const availableSeats = allAvailable
         ? makeAvailableSeats(seatIds.filter(id => !unavailableSeatIds.includes(id)))
         : makeAvailableSeats(seatIds.filter(id => !unavailableSeatIds.includes(id)));
 
     const redis = makeRedisMock(lockResult);
-    // Default count to seatIds.length so tests that aren't exercising the
-    // count boundary don't accidentally trip it when some seats are unavailable.
-    const prisma = makePrismaMock(availableSeats, availableSeatCount ?? seatIds.length);
+    const prisma = makePrismaMock(availableSeats);
 
     if (dbError) {
         prisma.seat.updateMany.mockRejectedValue(dbError);
@@ -356,10 +347,9 @@ describe('TicketService.reserveSeats — behavior', () => {
                 expect(result).toMatchObject(EXPECTED_SUCCESS_RETURN_OBJECT);;
             });
 
-            it(`succeeds when requesting exactly as many seats as are available in the database`, async () => {
-                // DB reports MAX_SEATS available; requesting exactly MAX_SEATS must succeed.
+            it(`succeeds with exactly MAX_SEATS (${MAX_SEATS}) seats (the maximum allowed per reservation)`, async () => {
                 const seatIds = makeSeatIds(MAX_SEATS);
-                const { service } = buildService({ seatIds, availableSeatCount: MAX_SEATS });
+                const { service } = buildService({ seatIds });
 
                 const result = await service.reserveSeats(seatIds, USER_ID);
 
@@ -372,18 +362,9 @@ describe('TicketService.reserveSeats — behavior', () => {
                 await expect(service.reserveSeats([], USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
 
-            it(`fails immediately when requesting more seats than are available in the database`, async () => {
-                // DB reports MAX_SEATS available; requesting MAX_SEATS+1 must be rejected.
+            it(`fails immediately when requesting more than MAX_SEATS (${MAX_SEATS + 1}+) seats`, async () => {
                 const seatIds = makeSeatIds(MAX_SEATS + 1);
-                const { service } = buildService({ seatIds, availableSeatCount: MAX_SEATS });
-
-                await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Invalid number of seats provided.")
-            });
-
-            it('fails when requested seat count exceeds available count by an arbitrary margin', async () => {
-                // 3 seats available in DB, but 7 are requested.
-                const seatIds = makeSeatIds(7);
-                const { service } = buildService({ seatIds, availableSeatCount: 3 });
+                const { service } = buildService({ seatIds });
 
                 await expect(service.reserveSeats(seatIds, USER_ID)).rejects.toThrow("Invalid number of seats provided.")
             });
@@ -413,9 +394,7 @@ describe('TicketService.reserveSeats — behavior', () => {
 
             it('fails when the seat ids array contains duplicates', async () => {
                 const id = 'seat-uuid-1';
-                // reserveSeats receives 2 items; availableSeatCount must be >= 2
-                // so the count guard doesn't fire before the duplicate check.
-                const { service } = buildService({ seatIds: [id], availableSeatCount: 2 });
+                const { service } = buildService({ seatIds: [id] });
 
                 await expect(service.reserveSeats([id, id], USER_ID)).rejects.toThrow("Duplicate Seat IDs provided.")
             });
@@ -483,9 +462,7 @@ describe('TicketService.reserveSeats — behavior', () => {
             it('fails when a requested seat id does not exist in the database at all', async () => {
                 const realIds = makeSeatIds(2);
                 const ghostId = 'non-existent-seat-uuid';
-                // reserveSeats receives 3 items; availableSeatCount must be >= 3
-                // so the count guard doesn't fire before findMany returns the mismatch.
-                const { service } = buildService({ seatIds: realIds, availableSeatCount: realIds.length + 1 });
+                const { service } = buildService({ seatIds: realIds });
 
                 // The ghost id is not in DB, so findMany returns only the real ones.
                 await expect(service.reserveSeats([...realIds, ghostId], USER_ID)).rejects.toThrow("Some seats are not available.")
