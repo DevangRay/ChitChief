@@ -32,6 +32,8 @@ type ReservationObject = {
     expires_at_string: string
 }
 
+const MAX_NUMBER_OF_SEATS_PER_RESERVATION = 10;
+
 const TTL_TIME_IN_SECONDS = 60;
 
 // Can improve performance with SCRIPT LOAD and using EVALSHA
@@ -79,12 +81,7 @@ export class TicketService {
     async reserveSeats(seats: string[], user_uuid: string): Promise<ReservationObject> {
         // 1. Validate seats and user
         console.log("[reserveSeats] Validating seats and user parameters.");
-        const available_seat_count = await this.prisma.seat.count({
-            where: {
-                seat_status: SeatStatus.AVAILABLE
-            }
-        });
-        if (!seats || seats.length === 0 || seats.length > available_seat_count) {
+        if (!seats || seats.length === 0 || seats.length > MAX_NUMBER_OF_SEATS_PER_RESERVATION) {
             console.log("[reserveSeats] Invalid number of seats provided for reservation.");
             throw new ResourceNotFoundError("Invalid number of seats provided.")
         }
