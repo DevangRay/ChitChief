@@ -3,21 +3,6 @@
 ## Check the Deployed API
 ### Live API Explorer: https://chitchief.up.railway.app/docs
 
-## Test the API locally yourself!
-#### Using Docker
-* Use example .env files:
-    * Located at:
-        * [root .env.example](.env.example)
-        * [api .env.example](/api/.env.example)
-    * To create corresponding `.env` files
-* Create Docker instances
-    * `docker compose up --build -d`
-* Connect Stripe webhook
-    * Run in `/api` directory: `stripe listen --forward-to localhost:3000/webhooks/payment/confirm`
-* Restarting/Shutting-down Docker instance
-    * `docker compose down`
-        * run with flag `-v` to clear the slate
-
 ## Example Backend flow
 1. `POST /auth/register` or `POST /auth/login`        → create an account/login to get a JWT token (copy it)
 2. `GET  /events`               → browse available events
@@ -39,6 +24,10 @@
 ## Load Testing Results
 Testing the core-concurrency requierment. Exactly 1 user succeeds when many race for the same seat. This was verified under load.
 ### Test: 400 Concurrent Reservation Requests from 200 Users
+#### Discussion
+50 virtual users simultaneously hit the same seat reservation endpoint.
+Redis's atomic Lua script ensures exactly one lock is acquired — the 
+remaining 399 receive a 409 conflict response, directly proving the solution properly supports concurrency.
 #### Command used:
 ```
 npm run test:performance:concurrent
@@ -52,13 +41,12 @@ node src/test/run-performance.mjs concurrent_reservation
 * `successful_reservations` count is 1
 
 ![See the full results](/resources/k6_concurrency_test.png)
-#### Discussion
-50 virtual users simultaneously hit the same seat reservation endpoint.
-Redis's atomic Lua script ensures exactly one lock is acquired — the 
-remaining 399 receive a 409 conflict response, directly proving the solution properly supports concurrency.
 
 ---------------
 ### Test: End-to-end Stress Test
+#### Discussion
+This test encapsulates how the system would actually perform at scale. The test creates virtual users, ramping up to 500 concurrent users at its peak, with each user simulating realistic flows by hitting several endpoints (registering users, seeing available events, checking out seats, reserving tickets, etc.). `k6` tracks key metrics like how many requests failed and how long these requests took, creating a single view that can actually verify if this system can actually walk the walk or if its all just talk.
+
 #### Command used:
 ```
 npm run test:performance:e2e
@@ -100,6 +88,21 @@ node src/test/run-performance.mjs e2e_load
     * Load testing
         * `k6`
 
+## Test the API locally yourself!
+#### Using Docker
+* Use example .env files:
+    * Located at:
+        * [root .env.example](.env.example)
+        * [api .env.example](/api/.env.example)
+    * To create corresponding `.env` files
+* Create Docker instances
+    * `docker compose up --build -d`
+* Connect Stripe webhook
+    * Run in `/api` directory: `stripe listen --forward-to localhost:3000/webhooks/payment/confirm`
+* Restarting/Shutting-down Docker instance
+    * `docker compose down`
+        * run with flag `-v` to clear the slate
+
 ## Notes
 ### This backend demo focuses on:
 * High-concurrency seat reservation (100+ simultaneous users)
@@ -128,7 +131,7 @@ node src/test/run-performance.mjs e2e_load
     * Future implementation to track seat count with Redis.
 
 
-## Glossary
+## Reference
 * Re-generating prisma
     * `npx prisma generate`
 * Locally see Postgres DB
